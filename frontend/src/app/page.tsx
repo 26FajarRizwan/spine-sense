@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { Activity, ChartLine, ScanLine } from "lucide-react";
 
@@ -31,13 +30,10 @@ export default function HomePage() {
     <div>
       <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-14 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:px-8 lg:py-20">
         <div>
-          <Image
+          <img
             src="/logo-lockup.png"
             alt="SpineSense. Better posture, healthier you."
-            width={985}
-            height={826}
-            priority
-            className="h-36 w-auto sm:h-44"
+            className="h-40 w-auto max-w-full object-contain sm:h-48"
           />
           <p className="mt-6 text-sm font-semibold tracking-wide text-accent">AI-powered ergonomics</p>
           <h1 className="mt-3 max-w-xl text-4xl font-semibold tracking-tight text-ink sm:text-5xl sm:leading-[1.08]">
