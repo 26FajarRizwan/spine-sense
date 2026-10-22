@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+:root {
+  --ss-canvas: #ffffff;
+  --ss-mist: #f8fafc;
+  --ss-ink: #0f172a;
+  --ss-ink-soft: #475569;
+  --ss-line: #e2e8f0;
+  --ss-brand: #2563eb;
+  --ss-accent: #6366f1;
+  --ss-accent-soft: #eef2ff;
+  --ss-accent-muted: #a5b4fc;
+  --ss-good: #10b981;
+  --ss-warning: #f59e0b;
+  --ss-slump: #ef4444;
+  --ss-good-ink: #047857;
+  --ss-warning-ink: #92400e;
+  --ss-slump-ink: #b91c1c;
+  --background: var(--ss-mist);
+  --foreground: var(--ss-ink);
+}
+
+@theme inline {
+  --color-canvas: var(--ss-canvas);
+  --color-mist: var(--ss-mist);
+  --color-ink: var(--ss-ink);
+  --color-ink-soft: var(--ss-ink-soft);
+  --color-line: var(--ss-line);
+  --color-brand: var(--ss-brand);
+  --color-accent: var(--ss-accent);
+  --color-accent-soft: var(--ss-accent-soft);
+  --color-accent-muted: var(--ss-accent-muted);
+  --color-posture-good: var(--ss-good);
+  --color-posture-warning: var(--ss-warning);
+  --color-posture-slump: var(--ss-slump);
+  --color-posture-good-ink: var(--ss-good-ink);
+  --color-posture-warning-ink: var(--ss-warning-ink);
+  --color-posture-slump-ink: var(--ss-slump-ink);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", ui-monospace, "Segoe UI Mono", monospace;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 16px 40px rgb(15 23 42 / 0.06);
+}
+
+body {
+  background: var(--ss-mist);
+  color: var(--ss-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: #c7d2fe;
+  color: var(--ss-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ss-accent);
+  outline-offset: 2px;
+}
