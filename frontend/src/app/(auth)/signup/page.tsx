@@ -7,6 +7,7 @@ export const metadata: Metadata = {
     "Create a SpineSense account with your name, age, contact, work setup, and email.",
 };
 
+/** Same split login shell; signup opens as a modal (fixes long-form alignment). */
 export default function SignupPage() {
-  return <AuthForm mode="signup" />;
+  return <AuthForm initialSignupOpen />;
 }
