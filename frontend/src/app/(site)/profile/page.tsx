@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Settings, UserRound } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabaseClient";
 
 export default function ProfilePage() {
   const router = useRouter();

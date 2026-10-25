@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { signInUser, signUpUser } from "@/lib/auth";
+import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
 
 interface AuthFormProps {
   /** Open the signup modal on first paint (e.g. /signup route). */
@@ -166,19 +167,14 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
       return;
     }
 
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) {
+    if (!configured) {
       setLoginError("Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.");
       return;
     }
 
     setLoading(true);
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (authError) throw authError;
+      await signInUser(email.trim(), password);
       setLoginMessage("Signed in successfully. Redirecting…");
       router.push("/dashboard");
       router.refresh();
@@ -198,29 +194,34 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
       return;
     }
 
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) {
+    if (!configured) {
       setSignupError("Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.");
       return;
     }
 
     setLoading(true);
     try {
-      const { error: authError } = await supabase.auth.signUp({
-        email: signupEmail.trim(),
-        password: signupPassword,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-            age: Number(age),
-            phone: phone.trim(),
-            gender,
-            occupation,
-          },
+      const { session } = await signUpUser(
+        signupEmail.trim(),
+        signupPassword,
+        fullName.trim(),
+        {
+          age: Number(age),
+          phone: phone.trim(),
+          gender,
+          occupation,
         },
-      });
-      if (authError) throw authError;
-      setSignupMessage("Account created. Check your email to confirm, then sign in.");
+      );
+
+      if (session) {
+        setSignupMessage("Account created. Redirecting to your dashboard…");
+        router.push("/dashboard");
+        router.refresh();
+      } else {
+        setSignupMessage(
+          "Account created. Check your email to confirm, then sign in.",
+        );
+      }
     } catch (err) {
       setSignupError(err instanceof Error ? err.message : "Sign up failed.");
     } finally {

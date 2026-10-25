@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import { signOutUser } from "@/lib/auth";
 import {
   getSupabaseBrowserClient,
   isSupabaseConfigured,
-} from "@/lib/supabase/client";
+} from "@/lib/supabaseClient";
 
 export interface AuthUserInfo {
   id: string;
@@ -73,9 +74,11 @@ export function useAuth() {
   }, []);
 
   async function signOut() {
-    const supabase = getSupabaseBrowserClient();
-    if (supabase) await supabase.auth.signOut();
-    setUser(null);
+    try {
+      if (isSupabaseConfigured()) await signOutUser();
+    } finally {
+      setUser(null);
+    }
   }
 
   return {

@@ -21,7 +21,7 @@ import {
 import {
   getSupabaseBrowserClient,
   isSupabaseConfigured,
-} from "@/lib/supabase/client";
+} from "@/lib/supabaseClient";
 
 export function SettingsForm() {
   const router = useRouter();
