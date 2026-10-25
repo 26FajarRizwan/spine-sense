@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BellOff } from "lucide-react";
 import { CameraFeed } from "@/components/CameraFeed";
 import { PostureHUD } from "@/components/PostureHUD";
-import { playAlertBeep } from "@/lib/audio";
+import { playCriticalSlumpAlert, playWarningAlert } from "@/utils/audioAlert";
+import { loadSettings } from "@/lib/settings";
 import { statusFromScore } from "@/lib/posture";
 import type { PostureStatus } from "@/types/posture";
 
@@ -44,8 +45,9 @@ export function SessionWorkspace() {
     if (status === lastAlertRef.current) return;
     lastAlertRef.current = status;
 
-    if (status === "WARNING") playAlertBeep("warning");
-    if (status === "SLUMPING") playAlertBeep("slump");
+    const volume = loadSettings().audioVolume;
+    if (status === "WARNING") playWarningAlert(volume);
+    if (status === "SLUMPING") playCriticalSlumpAlert(volume);
   }, [active, audioAlerts, status]);
 
   return (
