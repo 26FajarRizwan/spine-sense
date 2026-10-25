@@ -105,7 +105,7 @@ export function CameraFeed({ active, postureStatus, onActiveChange }: CameraFeed
   return (
     <section
       aria-label="Live camera"
-      className="overflow-hidden rounded-3xl border border-line bg-canvas shadow-card"
+      className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_12px_32px_-24px_rgba(15,23,42,0.35)]"
     >
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
         <div>
@@ -115,7 +115,7 @@ export function CameraFeed({ active, postureStatus, onActiveChange }: CameraFeed
         <button
           type="button"
           onClick={() => onActiveChange(!active)}
-          className="inline-flex items-center gap-2 rounded-full bg-accent px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#4F46E5]"
+          className="inline-flex items-center gap-2 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
         >
           {active ? <CameraOff className="h-4 w-4" aria-hidden="true" /> : <Camera className="h-4 w-4" aria-hidden="true" />}
           {active ? "Stop camera" : "Enable camera"}
@@ -142,7 +142,7 @@ export function CameraFeed({ active, postureStatus, onActiveChange }: CameraFeed
           </p>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-spine/20 bg-spine-soft text-spine">
               <CameraOff className="h-7 w-7" aria-hidden="true" />
             </span>
             <div>
@@ -154,10 +154,10 @@ export function CameraFeed({ active, postureStatus, onActiveChange }: CameraFeed
           </div>
         )}
 
-        <span className="pointer-events-none absolute left-3 top-3 h-6 w-6 rounded-tl-lg border-l-2 border-t-2 border-accent/80" />
-        <span className="pointer-events-none absolute right-3 top-3 h-6 w-6 rounded-tr-lg border-r-2 border-t-2 border-accent/80" />
-        <span className="pointer-events-none absolute bottom-3 left-3 h-6 w-6 rounded-bl-lg border-b-2 border-l-2 border-accent/80" />
-        <span className="pointer-events-none absolute bottom-3 right-3 h-6 w-6 rounded-br-lg border-b-2 border-r-2 border-accent/80" />
+        <span className="pointer-events-none absolute left-3 top-3 h-6 w-6 rounded-tl-lg border-l-2 border-t-2 border-brand/70" />
+        <span className="pointer-events-none absolute right-3 top-3 h-6 w-6 rounded-tr-lg border-r-2 border-t-2 border-brand/70" />
+        <span className="pointer-events-none absolute bottom-3 left-3 h-6 w-6 rounded-bl-lg border-b-2 border-l-2 border-brand/70" />
+        <span className="pointer-events-none absolute bottom-3 right-3 h-6 w-6 rounded-br-lg border-b-2 border-r-2 border-brand/70" />
       </div>
     </section>
   );

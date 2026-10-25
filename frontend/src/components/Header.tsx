@@ -1,122 +1,209 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Video, type LucideIcon } from "lucide-react";
-import { useSessionConnection } from "@/components/SessionProvider";
-import type { ConnectionState } from "@/types/posture";
+import { Menu, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
-const NAV_ITEMS: readonly { href: string; label: string; icon: LucideIcon }[] = [
-  { href: "/session", label: "Session", icon: Video },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-];
+const NAV_ITEMS = [
+  { href: "/", label: "Home" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/session", label: "Demo Session" },
+] as const;
 
-const CONNECTION_LABEL: Record<ConnectionState, string> = {
-  live: "Live",
-  standby: "Standby",
-  offline: "Offline",
-};
-
-function BrandMark() {
+function BrandLockup() {
   return (
-    <svg viewBox="0 0 36 36" className="h-9 w-9" aria-hidden="true">
-      <rect width="36" height="36" rx="10" fill="#EEF2FF" />
-      <circle cx="21" cy="11" r="3.6" fill="none" stroke="#2563EB" strokeWidth="1.7" />
-      <path
-        d="M15.5 16.5c-2.6 2-4.2 5.2-4.2 9.2M25.2 15.2c2.4 1.8 3.8 4.4 3.8 7.6"
-        fill="none"
-        stroke="#2563EB"
-        strokeWidth="1.7"
-        strokeLinecap="round"
+    <span className="inline-flex items-center gap-2.5">
+      <Image
+        src="/brand-mark.png"
+        alt=""
+        width={40}
+        height={72}
+        priority
+        aria-hidden="true"
+        className="h-10 w-auto object-contain object-center"
       />
-      <circle cx="18.4" cy="16.2" r="1.25" fill="#0F766E" />
-      <circle cx="17.6" cy="20" r="1.45" fill="#10B981" />
-      <circle cx="16.8" cy="24.2" r="2" fill="#10B981" />
-      <circle cx="16.1" cy="28.6" r="1.35" fill="#0F172A" />
-    </svg>
-  );
-}
-
-function ConnectionBadge() {
-  const { connection } = useSessionConnection();
-  const label = CONNECTION_LABEL[connection];
-  const tone =
-    connection === "live"
-      ? "border-posture-good/30 bg-posture-good/10 text-posture-good-ink"
-      : connection === "offline"
-        ? "border-posture-slump/30 bg-posture-slump/10 text-posture-slump-ink"
-        : "border-line bg-mist text-ink-soft";
-  const dot =
-    connection === "live"
-      ? "bg-posture-good"
-      : connection === "offline"
-        ? "bg-posture-slump"
-        : "bg-ink-soft";
-
-  return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${tone}`}
-      role="status"
-      aria-label={`Connection status: ${label}`}
-    >
-      <span className="relative flex h-2 w-2" aria-hidden="true">
-        {connection === "live" ? (
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-posture-good opacity-70 motion-reduce:animate-none" />
-        ) : null}
-        <span className={`relative h-2 w-2 rounded-full ${dot}`} />
+      <span className="leading-none">
+        <span className="block text-base font-bold tracking-tight sm:text-lg">
+          <span className="text-spine">Spine</span>
+          <span className="text-brand">Sense</span>
+        </span>
+        <span className="mt-1 hidden text-[8px] font-semibold uppercase tracking-[0.14em] text-slate-500 xl:block">
+          Better posture <span className="text-spine">•</span> healthier you
+        </span>
       </span>
-      {label}
     </span>
   );
 }
 
 export function Header() {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-canvas/90 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-line/80 bg-white/90 backdrop-blur-md">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-full focus:bg-ink focus:px-3 focus:py-2 focus:text-sm focus:text-canvas"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-xl focus:bg-brand focus:px-3 focus:py-2 focus:text-sm focus:text-white"
       >
         Skip to content
       </a>
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3 lg:px-8">
-        <Link href="/" className="mr-auto flex items-center gap-2.5 rounded-xl">
-          <BrandMark />
-          <span className="text-lg font-semibold tracking-tight">
-            <span className="text-posture-good-ink">Spine</span>
-            <span className="text-brand">Sense</span>
-          </span>
+
+      {/* Absolute-center nav = true optical center regardless of logo/auth width */}
+      <div className="container relative mx-auto flex h-16 items-center justify-between px-6">
+        <Link
+          href="/"
+          className="relative z-10 inline-flex min-w-0 shrink-0"
+          aria-label="SpineSense home"
+        >
+          <BrandLockup />
         </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <ConnectionBadge />
-          <nav
-            aria-label="Primary"
-            className="flex rounded-full bg-mist p-1 ring-1 ring-line"
-          >
+
+        <nav
+          aria-label="Primary"
+          className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1 md:flex"
+        >
           {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const Icon = item.icon;
+            const active =
+              item.href === "/"
+                ? pathname === "/"
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`relative whitespace-nowrap px-3.5 py-2 text-sm font-medium transition-colors ${
                   active
-                    ? "bg-canvas text-ink shadow-sm ring-1 ring-line"
-                    : "text-ink-soft hover:text-ink"
+                    ? "text-brand"
+                    : "text-slate-500 hover:text-slate-900"
                 }`}
               >
-                <Icon className="h-4 w-4" aria-hidden="true" />
                 {item.label}
+                {active ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-3.5 -bottom-0.5 h-0.5 rounded-full bg-brand"
+                  />
+                ) : null}
               </Link>
             );
           })}
-          </nav>
+        </nav>
+
+        <div className="relative z-10 flex shrink-0 items-center justify-end gap-2">
+          <Link
+            href="/login"
+            className="hidden h-10 items-center justify-center whitespace-nowrap rounded-xl border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:border-brand/30 hover:text-brand sm:inline-flex"
+          >
+            Login
+          </Link>
+          <Link
+            href="/signup"
+            className="hidden h-10 items-center justify-center whitespace-nowrap rounded-xl bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-hover sm:inline-flex"
+          >
+            Sign Up
+          </Link>
+
+          <button
+            type="button"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line text-slate-700 md:hidden"
+            aria-expanded={open}
+            aria-controls="mobile-nav-drawer"
+            aria-label={open ? "Close menu" : "Open menu"}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
       </div>
+
+      {open ? (
+        <div className="fixed inset-0 z-50 md:hidden" id="mobile-nav-drawer">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/40"
+            aria-label="Close menu overlay"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute inset-y-0 right-0 flex w-[min(100%,20rem)] flex-col bg-white shadow-2xl">
+            <div className="flex h-16 items-center justify-between border-b border-line px-5">
+              <p className="text-sm font-semibold text-ink">Menu</p>
+              <button
+                type="button"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-line text-slate-700"
+                aria-label="Close menu"
+                onClick={() => setOpen(false)}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <nav aria-label="Mobile" className="flex flex-1 flex-col gap-1 p-4">
+              {NAV_ITEMS.map((item) => {
+                const active =
+                  item.href === "/"
+                    ? pathname === "/"
+                    : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setOpen(false)}
+                    className={`rounded-xl px-4 py-3 text-base font-medium ${
+                      active ? "bg-brand-soft text-brand" : "text-slate-700"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+            <div className="grid grid-cols-2 gap-2 border-t border-line p-4">
+              <Link
+                href="/login"
+                onClick={() => setOpen(false)}
+                className="inline-flex h-12 items-center justify-center rounded-xl border border-line text-sm font-semibold text-ink"
+              >
+                Login
+              </Link>
+              <Link
+                href="/signup"
+                onClick={() => setOpen(false)}
+                className="inline-flex h-12 items-center justify-center rounded-xl bg-brand text-sm font-semibold text-white"
+              >
+                Sign Up
+              </Link>
+            </div>
+            <div className="space-y-2 border-t border-line px-5 py-4 text-sm">
+              <a
+                href="mailto:hello@spinesense.app"
+                className="block font-medium text-brand underline-offset-2 hover:underline"
+              >
+                hello@spinesense.app
+              </a>
+              <a
+                href="tel:+18005550123"
+                className="block font-medium text-slate-700 underline-offset-2 hover:underline"
+              >
+                +1 (800) 555-0123
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }

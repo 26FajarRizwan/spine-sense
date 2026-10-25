@@ -29,7 +29,7 @@ export const DEMO_BONES: readonly (readonly [number, number])[] = [
 ];
 
 const BONE_COLOR: Record<PostureStatus, string> = {
-  GOOD: "#10B981",
+  GOOD: "#01AA6C",
   WARNING: "#F59E0B",
   SLUMPING: "#EF4444",
 };
@@ -74,13 +74,13 @@ export function drawSkeleton(
 
     if (isSpine) {
       ctx.beginPath();
-      ctx.fillStyle = "rgba(99, 102, 241, 0.22)";
+      ctx.fillStyle = "rgba(1, 170, 108, 0.22)";
       ctx.arc(point.x, point.y, radius * 2.1, 0, Math.PI * 2);
       ctx.fill();
     }
 
     ctx.beginPath();
-    ctx.fillStyle = "#6366F1";
+    ctx.fillStyle = "#005AF1";
     ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineWidth = 2;

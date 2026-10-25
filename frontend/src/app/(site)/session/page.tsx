@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { SessionWorkspace } from "@/components/SessionWorkspace";
 
 export const metadata: Metadata = {
-  title: "Live session",
-  description: "Monitor posture in real time with a camera feed, skeleton overlay, and score.",
+  title: "Demo session",
+  description:
+    "Guest demo mode: test the camera feed, skeleton overlay, score gauge, and audio alerts.",
 };
 
 export default function SessionPage() {

@@ -2,22 +2,30 @@
 @config "../../tailwind.config.ts";
 
 :root {
+  /* SpineSense logo palette */
   --ss-canvas: #ffffff;
   --ss-mist: #f8fafc;
   --ss-ink: #0f172a;
   --ss-ink-soft: #475569;
   --ss-line: #e2e8f0;
-  --ss-brand: #2563eb;
-  --ss-accent: #6366f1;
-  --ss-accent-soft: #eef2ff;
-  --ss-accent-muted: #a5b4fc;
-  --ss-good: #10b981;
+  --ss-brand: #005af1;
+  --ss-brand-hover: #0048c9;
+  --ss-brand-soft: #e8f0ff;
+  --ss-brand-muted: #7aa7ff;
+  --ss-spine: #01aa6c;
+  --ss-spine-hover: #01915c;
+  --ss-spine-soft: #e6f7f0;
+  --ss-spine-deep: #0f766e;
+  --ss-accent: #005af1;
+  --ss-accent-soft: #e8f0ff;
+  --ss-accent-muted: #7aa7ff;
+  --ss-good: #01aa6c;
   --ss-warning: #f59e0b;
   --ss-slump: #ef4444;
   --ss-good-ink: #047857;
   --ss-warning-ink: #92400e;
   --ss-slump-ink: #b91c1c;
-  --background: var(--ss-mist);
+  --background: var(--ss-canvas);
   --foreground: var(--ss-ink);
 }
 
@@ -28,6 +36,13 @@
   --color-ink-soft: var(--ss-ink-soft);
   --color-line: var(--ss-line);
   --color-brand: var(--ss-brand);
+  --color-brand-hover: var(--ss-brand-hover);
+  --color-brand-soft: var(--ss-brand-soft);
+  --color-brand-muted: var(--ss-brand-muted);
+  --color-spine: var(--ss-spine);
+  --color-spine-hover: var(--ss-spine-hover);
+  --color-spine-soft: var(--ss-spine-soft);
+  --color-spine-deep: var(--ss-spine-deep);
   --color-accent: var(--ss-accent);
   --color-accent-soft: var(--ss-accent-soft);
   --color-accent-muted: var(--ss-accent-muted);
@@ -39,23 +54,93 @@
   --color-posture-slump-ink: var(--ss-slump-ink);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-plus-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Cascadia Mono", ui-monospace, "Segoe UI Mono", monospace;
   --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 16px 40px rgb(15 23 42 / 0.06);
 }
 
+html,
 body {
-  background: var(--ss-mist);
-  color: var(--ss-ink);
+  overflow-x: hidden;
+}
+
+body {
+  background: #ffffff;
+  color: #0f172a;
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.025em;
 }
 
 ::selection {
-  background: #c7d2fe;
+  background: #cfe0ff;
   color: var(--ss-ink);
 }
 
 :focus-visible {
-  outline: 2px solid var(--ss-accent);
+  outline: 2px solid var(--ss-brand);
   outline-offset: 2px;
+}
+
+@keyframes ss-rise {
+  from {
+    transform: translateY(10px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes ss-skeleton-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes ss-pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+}
+
+.animate-rise {
+  animation: ss-rise 0.55s ease-out both;
+}
+
+.animate-rise-delay {
+  animation: ss-rise 0.65s ease-out 0.12s both;
+}
+
+.animate-skeleton-breathe {
+  animation: ss-skeleton-breathe 3.6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.animate-pulse-dot {
+  animation: ss-pulse-dot 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-rise-delay,
+  .animate-skeleton-breathe,
+  .animate-pulse-dot {
+    animation: none;
+  }
 }
