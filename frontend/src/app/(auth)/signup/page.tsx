@@ -3,7 +3,8 @@ import { AuthForm } from "@/components/AuthForm";
 
 export const metadata: Metadata = {
   title: "Sign up",
-  description: "Create a SpineSense account with email or Google via Supabase Auth.",
+  description:
+    "Create a SpineSense account with your name, age, contact, work setup, and email.",
 };
 
 export default function SignupPage() {

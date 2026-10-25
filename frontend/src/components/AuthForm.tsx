@@ -18,7 +18,22 @@ interface AuthFormProps {
   mode: AuthMode;
 }
 
+type FieldErrors = Partial<
+  Record<
+    | "fullName"
+    | "age"
+    | "phone"
+    | "gender"
+    | "occupation"
+    | "email"
+    | "password"
+    | "confirmPassword",
+    string
+  >
+>;
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^[+]?[\d\s()-]{10,16}$/;
 
 const FEATURES = [
   {
@@ -43,23 +58,89 @@ const FEATURES = [
   },
 ] as const;
 
+const GENDER_OPTIONS = [
+  { value: "", label: "Select gender" },
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "non_binary", label: "Non-binary" },
+  { value: "prefer_not", label: "Prefer not to say" },
+] as const;
+
+const OCCUPATION_OPTIONS = [
+  { value: "", label: "Select work setup" },
+  { value: "desk_office", label: "Office / desk job" },
+  { value: "remote", label: "Remote / WFH" },
+  { value: "student", label: "Student" },
+  { value: "healthcare", label: "Healthcare" },
+  { value: "other", label: "Other" },
+] as const;
+
+const inputClass = (hasError: boolean) =>
+  `h-11 w-full rounded-xl border bg-white px-3.5 text-sm text-ink outline-none transition focus:ring-4 ${
+    hasError
+      ? "border-red-400 focus:border-red-500 focus:ring-red-500/10"
+      : "border-line focus:border-brand focus:ring-brand/10"
+  }`;
+
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
+  const [fullName, setFullName] = useState("");
+  const [age, setAge] = useState("");
+  const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState("");
+  const [occupation, setOccupation] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const configured = isSupabaseConfigured();
+  const isSignup = mode === "signup";
+
+  function clearField(key: keyof FieldErrors) {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
 
   function validate(): boolean {
-    const next: { email?: string; password?: string } = {};
-    const trimmed = email.trim();
+    const next: FieldErrors = {};
+    const trimmedEmail = email.trim();
 
-    if (!trimmed) next.email = "Email is required.";
-    else if (!EMAIL_RE.test(trimmed)) next.email = "Enter a valid email address.";
+    if (isSignup) {
+      const name = fullName.trim();
+      if (!name) next.fullName = "Full name is required.";
+      else if (name.length < 2) next.fullName = "Enter your full name.";
+
+      const ageNum = Number(age);
+      if (!age.trim()) next.age = "Age is required.";
+      else if (!Number.isInteger(ageNum) || ageNum < 13 || ageNum > 100) {
+        next.age = "Enter a valid age (13–100).";
+      }
+
+      const phoneTrim = phone.trim();
+      if (!phoneTrim) next.phone = "Contact number is required.";
+      else if (!PHONE_RE.test(phoneTrim)) {
+        next.phone = "Enter a valid phone number.";
+      }
+
+      if (!gender) next.gender = "Please select an option.";
+      if (!occupation) next.occupation = "Please select your work setup.";
+
+      if (!confirmPassword) next.confirmPassword = "Confirm your password.";
+      else if (confirmPassword !== password) {
+        next.confirmPassword = "Passwords do not match.";
+      }
+    }
+
+    if (!trimmedEmail) next.email = "Email is required.";
+    else if (!EMAIL_RE.test(trimmedEmail)) next.email = "Enter a valid email address.";
 
     if (!password) next.password = "Password is required.";
     else if (password.length < 6) next.password = "Password must be at least 6 characters.";
@@ -99,6 +180,15 @@ export function AuthForm({ mode }: AuthFormProps) {
         const { error: authError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
+          options: {
+            data: {
+              full_name: fullName.trim(),
+              age: Number(age),
+              phone: phone.trim(),
+              gender,
+              occupation,
+            },
+          },
         });
         if (authError) throw authError;
         setMessage("Account created. Check your email to confirm, then sign in.");
@@ -138,8 +228,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
-      {/* Left — value props (reference-style panel) */}
+    <div className="grid min-h-screen lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
       <aside className="relative hidden flex-col border-r border-line bg-[#F5F7FB] px-10 py-12 xl:px-14 lg:flex">
         <div
           aria-hidden="true"
@@ -186,10 +275,9 @@ export function AuthForm({ mode }: AuthFormProps) {
         </p>
       </aside>
 
-      {/* Right — form */}
-      <section className="flex flex-col justify-center px-6 py-10 sm:px-10 lg:px-12 xl:px-16">
-        <div className="mx-auto w-full max-w-[22rem]">
-          <div className="mb-8 flex flex-col items-center text-center lg:mb-10">
+      <section className="flex flex-col justify-center px-6 py-10 sm:px-10 lg:max-h-screen lg:overflow-y-auto lg:px-12 xl:px-16">
+        <div className={`mx-auto w-full ${isSignup ? "max-w-md" : "max-w-[22rem]"}`}>
+          <div className="mb-7 flex flex-col items-center text-center lg:mb-8">
             <Link href="/" className="inline-flex items-center gap-2" aria-label="SpineSense home">
               <Image
                 src="/brand-mark.png"
@@ -205,10 +293,10 @@ export function AuthForm({ mode }: AuthFormProps) {
                 <span className="text-brand">Sense</span>
               </span>
             </Link>
-            <p className="mt-3 text-sm text-ink-soft lg:hidden">
-              {mode === "login"
-                ? "Sign in to sync sessions and posture history."
-                : "Create an account to save analytics across desks."}
+            <p className="mt-3 text-sm text-ink-soft">
+              {isSignup
+                ? "Tell us a bit about you so we can personalize posture coaching."
+                : "Sign in to sync sessions and posture history."}
             </p>
           </div>
 
@@ -239,7 +327,130 @@ export function AuthForm({ mode }: AuthFormProps) {
             <span className="h-px flex-1 bg-line" />
           </div>
 
-          <form onSubmit={(event) => void handleEmailAuth(event)} className="space-y-4" noValidate>
+          <form onSubmit={(event) => void handleEmailAuth(event)} className="space-y-3.5" noValidate>
+            {isSignup ? (
+              <>
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-ink">Full name</span>
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={fullName}
+                    onChange={(event) => {
+                      setFullName(event.target.value);
+                      clearField("fullName");
+                    }}
+                    aria-invalid={Boolean(fieldErrors.fullName)}
+                    className={inputClass(Boolean(fieldErrors.fullName))}
+                    placeholder="Ayesha Khan"
+                  />
+                  {fieldErrors.fullName ? (
+                    <span className="mt-1 block text-xs text-red-600" role="alert">
+                      {fieldErrors.fullName}
+                    </span>
+                  ) : null}
+                </label>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold text-ink">Age</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={13}
+                      max={100}
+                      value={age}
+                      onChange={(event) => {
+                        setAge(event.target.value);
+                        clearField("age");
+                      }}
+                      aria-invalid={Boolean(fieldErrors.age)}
+                      className={inputClass(Boolean(fieldErrors.age))}
+                      placeholder="28"
+                    />
+                    {fieldErrors.age ? (
+                      <span className="mt-1 block text-xs text-red-600" role="alert">
+                        {fieldErrors.age}
+                      </span>
+                    ) : null}
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold text-ink">Gender</span>
+                    <select
+                      value={gender}
+                      onChange={(event) => {
+                        setGender(event.target.value);
+                        clearField("gender");
+                      }}
+                      aria-invalid={Boolean(fieldErrors.gender)}
+                      className={`${inputClass(Boolean(fieldErrors.gender))} ${
+                        gender ? "text-ink" : "text-slate-400"
+                      }`}
+                    >
+                      {GENDER_OPTIONS.map((option) => (
+                        <option key={option.value || "empty"} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {fieldErrors.gender ? (
+                      <span className="mt-1 block text-xs text-red-600" role="alert">
+                        {fieldErrors.gender}
+                      </span>
+                    ) : null}
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-ink">Contact number</span>
+                  <input
+                    type="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(event) => {
+                      setPhone(event.target.value);
+                      clearField("phone");
+                    }}
+                    aria-invalid={Boolean(fieldErrors.phone)}
+                    className={inputClass(Boolean(fieldErrors.phone))}
+                    placeholder="+92 300 1234567"
+                  />
+                  {fieldErrors.phone ? (
+                    <span className="mt-1 block text-xs text-red-600" role="alert">
+                      {fieldErrors.phone}
+                    </span>
+                  ) : null}
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-ink">Work setup</span>
+                  <select
+                    value={occupation}
+                    onChange={(event) => {
+                      setOccupation(event.target.value);
+                      clearField("occupation");
+                    }}
+                    aria-invalid={Boolean(fieldErrors.occupation)}
+                    className={`${inputClass(Boolean(fieldErrors.occupation))} ${
+                      occupation ? "text-ink" : "text-slate-400"
+                    }`}
+                  >
+                    {OCCUPATION_OPTIONS.map((option) => (
+                      <option key={option.value || "empty"} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {fieldErrors.occupation ? (
+                    <span className="mt-1 block text-xs text-red-600" role="alert">
+                      {fieldErrors.occupation}
+                    </span>
+                  ) : null}
+                </label>
+              </>
+            ) : null}
+
             <label className="block">
               <span className="mb-1.5 block text-sm font-semibold text-ink">Email address</span>
               <input
@@ -248,14 +459,10 @@ export function AuthForm({ mode }: AuthFormProps) {
                 value={email}
                 onChange={(event) => {
                   setEmail(event.target.value);
-                  setFieldErrors((prev) => ({ ...prev, email: undefined }));
+                  clearField("email");
                 }}
                 aria-invalid={Boolean(fieldErrors.email)}
-                className={`h-11 w-full rounded-xl border bg-white px-3.5 text-sm text-ink outline-none transition focus:ring-4 ${
-                  fieldErrors.email
-                    ? "border-red-400 focus:border-red-500 focus:ring-red-500/10"
-                    : "border-line focus:border-brand focus:ring-brand/10"
-                }`}
+                className={inputClass(Boolean(fieldErrors.email))}
                 placeholder="you@company.com"
               />
               {fieldErrors.email ? (
@@ -270,25 +477,21 @@ export function AuthForm({ mode }: AuthFormProps) {
                 <label htmlFor="auth-password" className="text-sm font-semibold text-ink">
                   Password
                 </label>
-                {mode === "login" ? (
+                {!isSignup ? (
                   <span className="text-xs font-medium text-ink-soft">Forgot password?</span>
                 ) : null}
               </div>
               <input
                 id="auth-password"
                 type="password"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                autoComplete={isSignup ? "new-password" : "current-password"}
                 value={password}
                 onChange={(event) => {
                   setPassword(event.target.value);
-                  setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                  clearField("password");
                 }}
                 aria-invalid={Boolean(fieldErrors.password)}
-                className={`h-11 w-full rounded-xl border bg-white px-3.5 text-sm text-ink outline-none transition focus:ring-4 ${
-                  fieldErrors.password
-                    ? "border-red-400 focus:border-red-500 focus:ring-red-500/10"
-                    : "border-line focus:border-brand focus:ring-brand/10"
-                }`}
+                className={inputClass(Boolean(fieldErrors.password))}
                 placeholder="••••••••"
               />
               {fieldErrors.password ? (
@@ -297,6 +500,29 @@ export function AuthForm({ mode }: AuthFormProps) {
                 </span>
               ) : null}
             </div>
+
+            {isSignup ? (
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-semibold text-ink">Confirm password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(event) => {
+                    setConfirmPassword(event.target.value);
+                    clearField("confirmPassword");
+                  }}
+                  aria-invalid={Boolean(fieldErrors.confirmPassword)}
+                  className={inputClass(Boolean(fieldErrors.confirmPassword))}
+                  placeholder="••••••••"
+                />
+                {fieldErrors.confirmPassword ? (
+                  <span className="mt-1 block text-xs text-red-600" role="alert">
+                    {fieldErrors.confirmPassword}
+                  </span>
+                ) : null}
+              </label>
+            ) : null}
 
             {error ? (
               <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
@@ -317,29 +543,29 @@ export function AuthForm({ mode }: AuthFormProps) {
               disabled={loading}
               className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#0B1F4D] text-sm font-semibold text-white transition-colors hover:bg-[#071536] disabled:opacity-60"
             >
-              {loading ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
+              {loading ? "Please wait…" : isSignup ? "Create account" : "Sign in"}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-ink-soft">
-            {mode === "login" ? (
-              <>
-                Don&apos;t have an account?{" "}
-                <Link href="/signup" className="font-semibold text-brand hover:underline">
-                  Sign up
-                </Link>
-              </>
-            ) : (
+            {isSignup ? (
               <>
                 Already have an account?{" "}
                 <Link href="/login" className="font-semibold text-brand hover:underline">
                   Sign in
                 </Link>
               </>
+            ) : (
+              <>
+                Don&apos;t have an account?{" "}
+                <Link href="/signup" className="font-semibold text-brand hover:underline">
+                  Sign up
+                </Link>
+              </>
             )}
           </p>
 
-          <p className="mt-8 text-center text-xs text-slate-400">
+          <p className="mt-6 text-center text-xs text-slate-400">
             <Link href="/" className="hover:text-brand">
               ← Back to home
             </Link>
