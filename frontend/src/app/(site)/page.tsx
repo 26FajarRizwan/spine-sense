@@ -26,11 +26,6 @@ const FEATURES = [
 export default function HomePage() {
   return (
     <div className="relative overflow-x-hidden bg-white">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-[32rem] bg-[radial-gradient(ellipse_65%_45%_at_90%_0%,rgba(0,90,241,0.12),transparent_55%),radial-gradient(ellipse_45%_35%_at_4%_60%,rgba(1,170,108,0.08),transparent_50%),linear-gradient(180deg,#F3F7FF_0%,#FFFFFF_100%)]"
-      />
-
       <section className="relative">
         <div className="container mx-auto grid items-stretch gap-8 px-6 py-7 lg:grid-cols-12 lg:gap-10 lg:py-9">
           <div className="flex flex-col lg:col-span-5 animate-rise">
@@ -50,7 +45,7 @@ export default function HomePage() {
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Link
-                href="/session"
+                href="/demo"
                 className="group inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white transition-[background-color,transform] duration-200 hover:bg-brand-hover active:scale-[0.98]"
               >
                 <Play className="h-4 w-4" aria-hidden="true" />

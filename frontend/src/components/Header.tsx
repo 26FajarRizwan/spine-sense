@@ -17,14 +17,14 @@ import { useAuth } from "@/lib/useAuth";
 
 const GUEST_NAV = [
   { href: "/", label: "Home" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/session", label: "Demo Session" },
+  { href: "/demo", label: "Demo Session" },
 ] as const;
 
 const AUTH_NAV = [
   { href: "/", label: "Home" },
+  { href: "/session", label: "Live Session" },
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/session", label: "Demo Session" },
+  { href: "/settings", label: "Settings" },
 ] as const;
 
 function BrandLockup() {

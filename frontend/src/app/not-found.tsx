@@ -28,7 +28,7 @@ export default function NotFound() {
             Go home
           </Link>
           <Link
-            href="/session"
+            href="/demo"
             className="inline-flex h-11 min-w-[7.5rem] items-center justify-center rounded-xl border border-line bg-white px-5 text-sm font-semibold text-ink transition-colors hover:border-spine/30 hover:text-spine"
           >
             Live demo

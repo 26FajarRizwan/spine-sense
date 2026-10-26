@@ -12,50 +12,87 @@ import {
 import { playCriticalSlumpAlert, playTestCriticalAlert } from "@/utils/audioAlert";
 import {
   DEFAULT_SETTINGS,
-  loadSettings,
-  saveSettings,
   type GracePeriodSeconds,
   type ReportFrequency,
   type UserSettings,
 } from "@/lib/settings";
-import {
-  getSupabaseBrowserClient,
-  isSupabaseConfigured,
-} from "@/lib/supabaseClient";
+import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/useAuth";
 
 export function SettingsForm() {
   const router = useRouter();
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
   const [authChecking, setAuthChecking] = useState(true);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [savedSettings, setSavedSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function guard() {
-      const configured = isSupabaseConfigured();
-      const supabase = getSupabaseBrowserClient();
-
-      if (configured && supabase) {
-        const { data } = await supabase.auth.getSession();
-        if (cancelled) return;
-        if (!data.session) {
-          router.replace("/login");
-          return;
-        }
+    async function loadPreferences() {
+      if (authLoading) return;
+      if (!isAuthenticated || !user) {
+        router.replace("/login");
+        return;
       }
 
-      if (!cancelled) {
-        setSettings(loadSettings());
-        setAuthChecking(false);
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        if (!cancelled) {
+          setError("Supabase is not configured. Preferences cannot be loaded or saved.");
+          setAuthChecking(false);
+        }
+        return;
+      }
+
+      try {
+        const { data, error: queryError } = await supabase
+          .from("user_settings")
+          .select(
+            "email_reports_enabled, report_frequency, slouch_sensitivity, grace_period_seconds, audio_alerts_enabled, audio_volume",
+          )
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (queryError) {
+          setError(`Could not load preferences: ${queryError.message}`);
+        } else if (data) {
+          const loadedSettings: UserSettings = {
+            emailReportsEnabled: data.email_reports_enabled,
+            reportFrequency: data.report_frequency === "monthly" ? "monthly" : "weekly",
+            slouchSensitivityDeg: Number(data.slouch_sensitivity),
+            gracePeriodSeconds:
+              data.grace_period_seconds === 5 || data.grace_period_seconds === 10
+                ? data.grace_period_seconds
+                : 3,
+            audioAlertsEnabled: data.audio_alerts_enabled,
+            audioVolume: Number(data.audio_volume),
+          };
+          setSettings(loadedSettings);
+          setSavedSettings(loadedSettings);
+        }
+      } catch (queryError) {
+        if (!cancelled) {
+          setError(
+            `Could not load preferences: ${
+              queryError instanceof Error ? queryError.message : "unexpected error"
+            }`,
+          );
+        }
+      } finally {
+        if (!cancelled) setAuthChecking(false);
       }
     }
 
-    void guard();
+    void loadPreferences();
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [authLoading, isAuthenticated, router, user]);
 
   useEffect(() => {
     if (!savedFlash) return;
@@ -67,9 +104,46 @@ export function SettingsForm() {
     setSettings((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleSave() {
-    saveSettings(settings);
-    setSavedFlash(true);
+  async function handleSave() {
+    if (!user) return;
+    setSaving(true);
+    setError(null);
+    setSavedFlash(false);
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setError("Supabase is not configured. Preferences were not saved.");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const { error: saveError } = await supabase.from("user_settings").upsert(
+        {
+          user_id: user.id,
+          email_reports_enabled: settings.emailReportsEnabled,
+          report_frequency: settings.reportFrequency,
+          slouch_sensitivity: settings.slouchSensitivityDeg,
+          grace_period_seconds: settings.gracePeriodSeconds,
+          audio_alerts_enabled: settings.audioAlertsEnabled,
+          audio_volume: settings.audioVolume,
+        },
+        { onConflict: "user_id" },
+      );
+      if (saveError) {
+        setError(`Could not save preferences: ${saveError.message}`);
+      } else {
+        setSavedSettings(settings);
+        setSavedFlash(true);
+      }
+    } catch (saveError) {
+      setError(
+        `Could not save preferences: ${
+          saveError instanceof Error ? saveError.message : "unexpected error"
+        }`,
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleTestSound() {
@@ -80,7 +154,7 @@ export function SettingsForm() {
     playTestCriticalAlert(Math.max(settings.audioVolume, 0.85));
   }
 
-  if (authChecking) {
+  if (authChecking || authLoading || !isAuthenticated) {
     return (
       <div className="rounded-2xl border border-line bg-white px-6 py-16 text-center shadow-sm">
         <p className="text-sm font-medium text-ink-soft">Checking your session…</p>
@@ -90,6 +164,11 @@ export function SettingsForm() {
 
   return (
     <div className="space-y-5">
+      {error ? (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </p>
+      ) : null}
       {savedFlash ? (
         <div
           role="status"
@@ -98,18 +177,6 @@ export function SettingsForm() {
           <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
           Preferences saved. Your next sessions will use these settings.
         </div>
-      ) : null}
-
-      {!isSupabaseConfigured() ? (
-        <p
-          role="status"
-          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-        >
-          Supabase is not configured — settings are stored in this browser only.
-          Sign-in protection activates once{" "}
-          <code className="rounded bg-white px-1 py-0.5 text-xs">.env.local</code>{" "}
-          keys are set.
-        </p>
       ) : null}
 
       {/* Section 1 — Email reports */}
@@ -297,17 +364,22 @@ export function SettingsForm() {
       <div className="flex flex-wrap items-center justify-end gap-3 pt-1">
         <button
           type="button"
-          onClick={() => setSettings(loadSettings())}
+          onClick={() => {
+            setError(null);
+            setSettings(savedSettings);
+          }}
+          disabled={saving}
           className="inline-flex h-11 items-center justify-center rounded-xl border border-line bg-white px-5 text-sm font-semibold text-ink transition-colors hover:bg-mist"
         >
           Reset unsaved
         </button>
         <button
           type="button"
-          onClick={handleSave}
+          onClick={() => void handleSave()}
+          disabled={saving}
           className="inline-flex h-11 items-center justify-center rounded-xl bg-brand px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
         >
-          Save Preferences
+          {saving ? "Saving…" : "Save Preferences"}
         </button>
       </div>
     </div>

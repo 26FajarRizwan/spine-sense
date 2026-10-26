@@ -15,7 +15,7 @@ export interface AnalyticsSummary {
 
 export interface TrendPoint {
   label: string;
-  score: number;
+  score: number | null;
   slumps: number;
 }
 

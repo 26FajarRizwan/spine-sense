@@ -552,11 +552,6 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
       {/* Orbix-style split: both panes min-h-screen, content vertically centered */}
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
         <aside className="relative flex flex-col justify-between bg-[#F5F7FB] px-8 py-10 sm:px-12 lg:px-14 lg:py-12">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_12%_18%,rgba(0,90,241,0.10),transparent_55%),radial-gradient(ellipse_45%_40%_at_88%_78%,rgba(1,170,108,0.10),transparent_50%)]"
-          />
-
           <div className="relative flex flex-1 flex-col justify-center">
             <div className="max-w-xl">
               <h1 className="text-4xl font-bold leading-[1.12] tracking-tight text-ink xl:text-[2.75rem]">

@@ -4,14 +4,14 @@ import { CopyrightYear } from "@/components/CopyrightYear";
 
 const NAV = [
   { href: "/", label: "Home" },
+  { href: "/demo", label: "Demo Session" },
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/session", label: "Demo Session" },
   { href: "/login", label: "Login" },
   { href: "/signup", label: "Sign Up" },
 ] as const;
 
 const PRODUCT = [
-  { href: "/session", label: "Live demo" },
+  { href: "/demo", label: "Live demo" },
   { href: "/dashboard", label: "Analytics" },
   { href: "/signup", label: "Create account" },
 ] as const;

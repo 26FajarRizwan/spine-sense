@@ -22,7 +22,7 @@ export function AnalyticsCards({
 }: AnalyticsCardsProps) {
   const metrics: Metric[] = [
     {
-      label: "Total session time",
+      label: "Total sitting time tracked",
       value: formatSessionLength(totalSessionSeconds),
       hint: "Time tracked across saved sessions",
       icon: Clock3,
