@@ -42,6 +42,7 @@ export function DashboardWorkspace() {
 
   useEffect(() => {
     if (!user) return;
+    const userId = user.id;
     let cancelled = false;
 
     async function loadSessions() {
@@ -60,7 +61,7 @@ export function DashboardWorkspace() {
           const { data, error: queryError } = await supabase
             .from("posture_sessions")
             .select("id, duration_seconds, average_score, slump_count, created_at")
-            .eq("user_id", user.id)
+            .eq("user_id", userId)
             .order("created_at", { ascending: false })
             .range(offset, offset + 499);
 

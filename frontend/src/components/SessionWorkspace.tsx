@@ -43,13 +43,16 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
 
   useEffect(() => {
     if (!protectedMode) {
-      const settings = loadSettings();
-      setAudioAlerts(settings.audioAlertsEnabled);
-      setAudioVolume(settings.audioVolume);
-      return;
+      const timeout = window.setTimeout(() => {
+        const settings = loadSettings();
+        setAudioAlerts(settings.audioAlertsEnabled);
+        setAudioVolume(settings.audioVolume);
+      }, 0);
+      return () => window.clearTimeout(timeout);
     }
     if (!user) return;
 
+    const userId = user.id;
     let cancelled = false;
     async function loadAudioPreferences() {
       const supabase = getSupabaseBrowserClient();
@@ -61,7 +64,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
         const { data, error } = await supabase
           .from("user_settings")
           .select("audio_alerts_enabled, audio_volume")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .maybeSingle();
         if (cancelled) return;
         if (error) {
