@@ -1,14 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useHydrated } from "@/lib/useHydrated";
 
 export function CopyrightYear() {
-  const [year, setYear] = useState<number | null>(null);
-
-  useEffect(() => {
-    setYear(new Date().getFullYear());
-  }, []);
-
-  // Stable prerender placeholder; replaced after mount.
-  return <>{year ?? "2026"}</>;
+  const hydrated = useHydrated();
+  return <>{hydrated ? new Date().getFullYear() : ""}</>;
 }

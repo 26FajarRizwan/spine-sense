@@ -14,6 +14,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/lib/useAuth";
+import { useHydrated } from "@/lib/useHydrated";
 
 const GUEST_NAV = [
   { href: "/", label: "Home" },
@@ -63,19 +64,18 @@ export function Header() {
   const router = useRouter();
   const { user, isAuthenticated, loading: authLoading, signOut } = useAuth();
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const navItems = isAuthenticated ? AUTH_NAV : GUEST_NAV;
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    setOpen(false);
-    setMenuOpen(false);
+    const timeout = window.setTimeout(() => {
+      setOpen(false);
+      setMenuOpen(false);
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [pathname]);
 
   useEffect(() => {

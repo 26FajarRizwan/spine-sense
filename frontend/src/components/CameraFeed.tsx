@@ -20,7 +20,9 @@ export function CameraFeed({ active, postureStatus, onActiveChange }: CameraFeed
   const { setConnection } = useSessionConnection();
   const [error, setError] = useState<string | null>(null);
 
-  postureRef.current = postureStatus;
+  useEffect(() => {
+    postureRef.current = postureStatus;
+  }, [postureStatus]);
 
   useEffect(() => {
     if (!active) {

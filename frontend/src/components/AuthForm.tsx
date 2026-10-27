@@ -14,6 +14,7 @@ import { useEffect, useId, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { signInUser, signUpUser } from "@/lib/auth";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
+import { useHydrated } from "@/lib/useHydrated";
 
 interface AuthFormProps {
   /** Open the signup modal on first paint (e.g. /signup route). */
@@ -73,7 +74,7 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   const router = useRouter();
   const titleId = useId();
   const [signupOpen, setSignupOpen] = useState(initialSignupOpen);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,10 +96,6 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   const [signupMessage, setSignupMessage] = useState<string | null>(null);
 
   const configured = isSupabaseConfigured();
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!signupOpen) return;
