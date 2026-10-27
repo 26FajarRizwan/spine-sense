@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Clock3 } from "lucide-react";
@@ -27,6 +27,73 @@ function getStatus(score: number) {
   if (score >= 80) return { label: "Good", className: "bg-spine-soft text-spine-deep" };
   if (score >= 60) return { label: "Needs attention", className: "bg-amber-50 text-amber-800" };
   return { label: "Slumping", className: "bg-red-50 text-red-700" };
+}
+
+function DashboardTrends({ sessions }: { sessions: SessionRow[] }) {
+  const { dailyTrend, weeklyTrend, slumpBuckets } = useMemo(() => {
+    const now = new Date();
+    const todayKey = dateKey(now);
+    const dayRows = new Map<string, SessionRow[]>();
+    const hourRows = new Map<number, SessionRow[]>();
+
+    sessions.forEach((session) => {
+      const created = new Date(session.created_at);
+      const key = dateKey(created);
+      dayRows.set(key, [...(dayRows.get(key) ?? []), session]);
+      if (key === todayKey) {
+        hourRows.set(created.getHours(), [...(hourRows.get(created.getHours()) ?? []), session]);
+      }
+    });
+
+    const scoreFor = (rows: SessionRow[]) => {
+      const duration = rows.reduce((total, row) => total + row.duration_seconds, 0);
+      const score =
+        duration > 0
+          ? rows.reduce(
+              (total, row) => total + Number(row.average_score) * row.duration_seconds,
+              0,
+            ) / duration
+          : rows.reduce((total, row) => total + Number(row.average_score), 0) /
+            Math.max(rows.length, 1);
+      return rows.length > 0 ? Math.round(score) : null;
+    };
+
+    const weekly: TrendPoint[] = [];
+    for (let offset = 6; offset >= 0; offset -= 1) {
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
+      const rows = dayRows.get(dateKey(day)) ?? [];
+      weekly.push({
+        label: new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(day),
+        score: scoreFor(rows),
+        slumps: rows.reduce((total, row) => total + row.slump_count, 0),
+      });
+    }
+
+    const daily: TrendPoint[] = [...hourRows.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([hour, rows]) => ({
+        label: new Intl.DateTimeFormat(undefined, {
+          hour: "numeric",
+        }).format(new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour)),
+        score: scoreFor(rows),
+        slumps: rows.reduce((total, row) => total + row.slump_count, 0),
+      }));
+
+    const slumpBuckets: SlumpBucket[] = weekly.map(({ label, slumps }) => ({
+      label,
+      slumps,
+    }));
+
+    return { dailyTrend: daily, weeklyTrend: weekly, slumpBuckets };
+  }, [sessions]);
+
+  return (
+    <PostureCharts
+      dailyTrend={dailyTrend}
+      weeklyTrend={weeklyTrend}
+      slumps={slumpBuckets}
+    />
+  );
 }
 
 export function DashboardWorkspace() {
@@ -117,63 +184,6 @@ export function DashboardWorkspace() {
     };
   }, [sessions]);
 
-  const { dailyTrend, weeklyTrend, slumpBuckets } = useMemo(() => {
-    const now = new Date();
-    const todayKey = dateKey(now);
-    const dayRows = new Map<string, SessionRow[]>();
-    const hourRows = new Map<number, SessionRow[]>();
-
-    sessions.forEach((session) => {
-      const created = new Date(session.created_at);
-      const key = dateKey(created);
-      dayRows.set(key, [...(dayRows.get(key) ?? []), session]);
-      if (key === todayKey) {
-        hourRows.set(created.getHours(), [...(hourRows.get(created.getHours()) ?? []), session]);
-      }
-    });
-
-    const scoreFor = (rows: SessionRow[]) => {
-      const duration = rows.reduce((total, row) => total + row.duration_seconds, 0);
-      const score =
-        duration > 0
-          ? rows.reduce(
-              (total, row) => total + Number(row.average_score) * row.duration_seconds,
-              0,
-            ) / duration
-          : rows.reduce((total, row) => total + Number(row.average_score), 0) /
-            Math.max(rows.length, 1);
-      return rows.length > 0 ? Math.round(score) : null;
-    };
-
-    const weekly: TrendPoint[] = [];
-    for (let offset = 6; offset >= 0; offset -= 1) {
-      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
-      const rows = dayRows.get(dateKey(day)) ?? [];
-      weekly.push({
-        label: new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(day),
-        score: scoreFor(rows),
-        slumps: rows.reduce((total, row) => total + row.slump_count, 0),
-      });
-    }
-
-    const daily: TrendPoint[] = [...hourRows.entries()]
-      .sort(([left], [right]) => left - right)
-      .map(([hour, rows]) => ({
-        label: new Intl.DateTimeFormat(undefined, {
-          hour: "numeric",
-        }).format(new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour)),
-        score: scoreFor(rows),
-        slumps: rows.reduce((total, row) => total + row.slump_count, 0),
-      }));
-
-    const slumpBuckets: SlumpBucket[] = weekly.map(({ label, slumps }) => ({
-      label,
-      slumps,
-    }));
-
-    return { dailyTrend: daily, weeklyTrend: weekly, slumpBuckets };
-  }, [sessions]);
-
   if (authLoading || !isAuthenticated) {
     return (
       <div className="container mx-auto max-w-xl px-6 py-20 text-center">
@@ -221,11 +231,16 @@ export function DashboardWorkspace() {
         />
 
         <div className="mt-5">
-          <PostureCharts
-            dailyTrend={dailyTrend}
-            weeklyTrend={weeklyTrend}
-            slumps={slumpBuckets}
-          />
+          <Suspense
+            fallback={
+              <div
+                aria-label="Loading posture charts"
+                className="h-80 animate-pulse rounded-2xl border border-line bg-mist"
+              />
+            }
+          >
+            <DashboardTrends sessions={sessions} />
+          </Suspense>
         </div>
 
         <section className="mt-5 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_12px_32px_-24px_rgba(15,23,42,0.35)]">
