@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { signInUser, signUpUser } from "@/lib/auth";
-import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
+import { signInUser, signInWithOAuthProvider, signUpUser } from "@/lib/auth";
+import { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { useHydrated } from "@/lib/useHydrated";
 
 interface AuthFormProps {
@@ -229,9 +229,10 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   async function handleOAuth(provider: "google" | "apple") {
     setLoginError(null);
     setSignupError(null);
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) {
-      const msg = "Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.";
+
+    if (!configured) {
+      const msg =
+        "Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.";
       if (signupOpen) setSignupError(msg);
       else setLoginError(msg);
       return;
@@ -239,11 +240,10 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
 
     setLoading(true);
     try {
-      const { error: authError } = await supabase.auth.signInWithOAuth({
+      await signInWithOAuthProvider(
         provider,
-        options: { redirectTo: `${window.location.origin}/dashboard` },
-      });
-      if (authError) throw authError;
+        `${window.location.origin}/dashboard`,
+      );
     } catch (err) {
       const msg =
         err instanceof Error

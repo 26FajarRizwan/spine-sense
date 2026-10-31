@@ -123,3 +123,64 @@ export async function signOutUser(): Promise<void> {
   const { error } = await supabase.auth.signOut();
   if (error) throw new Error(authMessage(error, "Sign out failed."));
 }
+
+/**
+ * Starts Google / Apple OAuth. Requires the provider to be enabled in
+ * Supabase Dashboard → Authentication → Providers (with Client ID + Secret).
+ */
+export async function signInWithOAuthProvider(
+  provider: "google" | "apple",
+  redirectTo?: string,
+): Promise<void> {
+  const supabase = requireClient();
+
+  // Server-side probe → clear in-app error instead of a raw Supabase 400 page.
+  try {
+    const check = await fetch(`/api/auth/oauth-check?provider=${provider}`);
+    const payload = (await check.json()) as {
+      ok?: boolean;
+      message?: string;
+    };
+    if (payload.ok === false) {
+      throw new Error(
+        payload.message ||
+          `${provider === "apple" ? "Apple" : "Google"} sign-in is not available.`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof Error && /not enabled in Supabase|not available/i.test(err.message)) {
+      throw err;
+    }
+    // Probe unavailable — continue with normal OAuth redirect.
+  }
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo:
+        redirectTo ??
+        (typeof window !== "undefined"
+          ? `${window.location.origin}/dashboard`
+          : undefined),
+      skipBrowserRedirect: true,
+    },
+  });
+
+  if (error) {
+    const raw = authMessage(error, `${provider} sign-in failed.`);
+    if (/not enabled|unsupported provider/i.test(raw)) {
+      throw new Error(
+        `${provider === "apple" ? "Apple" : "Google"} sign-in is not enabled in Supabase yet. Turn it on under Authentication → Providers and add Client ID + Secret.`,
+      );
+    }
+    throw new Error(raw);
+  }
+
+  if (!data.url) {
+    throw new Error(
+      `${provider === "apple" ? "Apple" : "Google"} sign-in failed: no redirect URL.`,
+    );
+  }
+
+  window.location.assign(data.url);
+}
