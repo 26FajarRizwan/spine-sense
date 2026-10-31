@@ -35,13 +35,21 @@ function toInfo(user: User): AuthUserInfo {
 
 export function useAuth() {
   const [user, setUser] = useState<AuthUserInfo | null>(null);
-  const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [loading, setLoading] = useState(() => isSupabaseConfigured());
 
   useEffect(() => {
     let cancelled = false;
 
+    if (!isSupabaseConfigured()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
+      setUser(null);
+      setLoading(false);
       return;
     }
 
