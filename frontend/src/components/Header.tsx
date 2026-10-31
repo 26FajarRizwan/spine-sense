@@ -305,7 +305,7 @@ export function Header() {
                   onClick={() => setMenuOpen((v) => !v)}
                   className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white py-1 pl-1 pr-2.5 text-sm font-semibold text-ink transition-colors hover:border-brand/30"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-xs font-bold text-white">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-spine text-xs font-bold text-white">
                     {user.initials}
                   </span>
                   <ChevronDown className="h-4 w-4 text-slate-500" aria-hidden="true" />

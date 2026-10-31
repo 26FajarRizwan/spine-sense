@@ -35,7 +35,7 @@ export default function HomePage() {
 
             <h1 className="mt-3 max-w-md text-[2.05rem] font-bold leading-[1.1] tracking-tight text-ink sm:text-[2.4rem] lg:text-[2.55rem] lg:leading-[1.08]">
               Sit better.
-              <span className="block text-brand">Know it live.</span>
+              <span className="block text-spine">Know it live.</span>
             </h1>
 
             <p className="mt-3.5 max-w-[22rem] text-sm leading-6 text-ink-soft sm:text-[0.95rem] sm:leading-7">
@@ -46,7 +46,7 @@ export default function HomePage() {
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Link
                 href="/demo"
-                className="group inline-flex h-11 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white transition-[background-color,transform] duration-200 hover:bg-brand-hover active:scale-[0.98]"
+                className="group inline-flex h-11 items-center gap-2 rounded-xl bg-spine px-5 text-sm font-semibold text-white transition-[background-color,transform] duration-200 hover:bg-spine-hover active:scale-[0.98]"
               >
                 <Play className="h-4 w-4" aria-hidden="true" />
                 Start Live Demo
