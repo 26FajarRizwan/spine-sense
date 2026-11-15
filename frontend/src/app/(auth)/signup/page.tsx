@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { AuthForm } from "@/components/AuthForm";
 
 export const metadata: Metadata = {
@@ -9,5 +10,9 @@ export const metadata: Metadata = {
 
 /** Same split login shell; signup opens as a modal (fixes long-form alignment). */
 export default function SignupPage() {
-  return <AuthForm initialSignupOpen />;
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white" />}>
+      <AuthForm initialSignupOpen />
+    </Suspense>
+  );
 }
