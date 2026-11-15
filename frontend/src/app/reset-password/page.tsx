@@ -15,18 +15,30 @@ export default function ResetPasswordPage() {
     event.preventDefault();
     setError(null);
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError("Password needs an uppercase letter");
+      return;
+    }
+    if (!/[a-z]/.test(password)) {
+      setError("Password needs a lowercase letter");
+      return;
+    }
+    if (!/\d/.test(password)) {
+      setError("Password needs a number");
       return;
     }
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError("Passwords do not match");
       return;
     }
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase || !isSupabaseConfigured()) {
-      setError("Password reset is not available until Supabase is configured.");
+      setError("Password reset is not configured");
       return;
     }
 
@@ -37,7 +49,7 @@ export default function ResetPasswordPage() {
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update your password.");
+      setError(err instanceof Error ? err.message : "Unable to update your password");
     } finally {
       setLoading(false);
     }

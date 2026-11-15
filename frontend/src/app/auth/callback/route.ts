@@ -19,12 +19,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=oauth_callback_failed", origin));
   }
 
-  await supabase.auth.setSession({
-    access_token: data.session.access_token,
-    refresh_token: data.session.refresh_token,
+  const authorizedSupabase = createClient(url, anonKey, {
+    global: {
+      headers: { Authorization: `Bearer ${data.session.access_token}` },
+    },
   });
-
-  const { error: settingsError } = await supabase.from("user_settings").upsert(
+  const { error: settingsError } = await authorizedSupabase.from("user_settings").upsert(
     { user_id: data.user.id, ...DEFAULT_USER_SETTINGS },
     { onConflict: "user_id" },
   );
@@ -33,5 +33,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=settings_setup_failed", origin));
   }
 
-  return NextResponse.redirect(new URL("/dashboard", origin));
+  const redirectUrl = new URL("/dashboard", origin);
+  redirectUrl.hash = new URLSearchParams({
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+    expires_at: String(data.session.expires_at ?? ""),
+    expires_in: String(data.session.expires_in ?? ""),
+    token_type: data.session.token_type,
+    type: "oauth",
+  }).toString();
+  return NextResponse.redirect(redirectUrl);
 }

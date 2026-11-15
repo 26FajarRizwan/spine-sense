@@ -3,793 +3,281 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Activity,
-  AudioLines,
-  ChartLine,
-  ShieldCheck,
-  X,
-} from "lucide-react";
-import { useEffect, useId, useState, type FormEvent } from "react";
-import { createPortal } from "react-dom";
-import { signInUser, signInWithOAuthProvider, signUpUser } from "@/lib/auth";
-import {
-  getSupabaseBrowserClient,
-  isSupabaseConfigured,
-} from "@/lib/supabaseClient";
-import { useHydrated } from "@/lib/useHydrated";
+import { useState, type FormEvent } from "react";
+import { DEFAULT_USER_SETTINGS } from "@/lib/auth";
+import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
 
 interface AuthFormProps {
-  /** Open the signup modal on first paint (e.g. /signup route). */
   initialSignupOpen?: boolean;
 }
 
-type LoginErrors = Partial<Record<"email" | "password", string>>;
-type SignupErrors = Partial<
-  Record<
-    | "fullName"
-    | "age"
-    | "phone"
-    | "gender"
-    | "occupation"
-    | "email"
-    | "password"
-    | "confirmPassword",
-    string
-  >
->;
+type AuthMode = "signIn" | "signUp";
+type Notice = { tone: "error" | "success"; text: string } | null;
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^[+]?[\d\s()-]{10,16}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const FEATURES = [
-  { title: "Live skeleton overlay", icon: Activity, tone: "brand" as const },
-  { title: "Instant posture score", icon: ShieldCheck, tone: "spine" as const },
-  { title: "Audio slump alerts", icon: AudioLines, tone: "brand" as const },
-  { title: "Session analytics", icon: ChartLine, tone: "spine" as const },
-] as const;
+const inputClass =
+  "mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-[#0F172A] outline-none transition focus:border-[#005AF1] focus:ring-4 focus:ring-[#005AF1]/10";
 
-const GENDER_OPTIONS = [
-  { value: "", label: "Select gender" },
-  { value: "female", label: "Female" },
-  { value: "male", label: "Male" },
-  { value: "non_binary", label: "Non-binary" },
-  { value: "prefer_not", label: "Prefer not to say" },
-] as const;
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
 
-const OCCUPATION_OPTIONS = [
-  { value: "", label: "Select work setup" },
-  { value: "desk_office", label: "Office / desk job" },
-  { value: "remote", label: "Remote / WFH" },
-  { value: "student", label: "Student" },
-  { value: "healthcare", label: "Healthcare" },
-  { value: "other", label: "Other" },
-] as const;
+function validateEmail(email: string): string | null {
+  if (!email.trim()) return "Email is required";
+  if (!EMAIL_PATTERN.test(email.trim())) return "Enter a valid email address";
+  return null;
+}
 
-const inputClass = (hasError: boolean) =>
-  `h-11 w-full rounded-xl border bg-white px-3.5 text-sm text-ink outline-none transition focus:ring-4 ${
-    hasError
-      ? "border-red-400 focus:border-red-500 focus:ring-red-500/10"
-      : "border-line focus:border-brand focus:ring-brand/10"
-  }`;
+function validatePassword(password: string): string | null {
+  if (!password) return "Password is required";
+  if (password.length < 8) return "Password must be at least 8 characters";
+  if (!/[A-Z]/.test(password)) return "Password needs an uppercase letter";
+  if (!/[a-z]/.test(password)) return "Password needs a lowercase letter";
+  if (!/\d/.test(password)) return "Password needs a number";
+  return null;
+}
+
+function NoticeMessage({ notice }: { notice: Notice }) {
+  if (!notice) return null;
+  const classes =
+    notice.tone === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : "border-red-200 bg-red-50 text-red-700";
+  return (
+    <p
+      role={notice.tone === "error" ? "alert" : "status"}
+      className={`rounded-xl border px-3 py-2.5 text-sm ${classes}`}
+    >
+      {notice.text}
+    </p>
+  );
+}
 
 export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   const router = useRouter();
-  const titleId = useId();
-  const [signupOpen, setSignupOpen] = useState(initialSignupOpen);
-  const mounted = useHydrated();
-
+  const [mode, setMode] = useState<AuthMode>(initialSignupOpen ? "signUp" : "signIn");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loginErrors, setLoginErrors] = useState<LoginErrors>({});
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loginMessage, setLoginMessage] = useState<string | null>(null);
-  const [resetError, setResetError] = useState<string | null>(null);
-  const [resetMessage, setResetMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const [fullName, setFullName] = useState("");
-  const [age, setAge] = useState("");
-  const [phone, setPhone] = useState("");
-  const [gender, setGender] = useState("");
-  const [occupation, setOccupation] = useState("");
-  const [signupEmail, setSignupEmail] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [signupErrors, setSignupErrors] = useState<SignupErrors>({});
-  const [signupError, setSignupError] = useState<string | null>(null);
-  const [signupMessage, setSignupMessage] = useState<string | null>(null);
+  const [fullName, setFullName] = useState("");
+  const [notice, setNotice] = useState<Notice>(null);
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
   const configured = isSupabaseConfigured();
+  const isSignUp = mode === "signUp";
 
-  useEffect(() => {
-    if (!signupOpen) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSignupOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previous;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [signupOpen]);
-
-  function validateLogin(): boolean {
-    const next: LoginErrors = {};
-    const trimmed = email.trim();
-    if (!trimmed) next.email = "Email is required.";
-    else if (!EMAIL_RE.test(trimmed)) next.email = "Enter a valid email address.";
-    if (!password) next.password = "Password is required.";
-    else if (password.length < 6) next.password = "Password must be at least 6 characters.";
-    setLoginErrors(next);
-    return Object.keys(next).length === 0;
+  function switchMode(nextMode: AuthMode) {
+    setMode(nextMode);
+    setNotice(null);
+    setPassword("");
+    setConfirmPassword("");
   }
 
-  function validateSignup(): boolean {
-    const next: SignupErrors = {};
-    const name = fullName.trim();
-    if (!name) next.fullName = "Full name is required.";
-    else if (name.length < 2) next.fullName = "Enter your full name.";
+  async function handleEmailSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice(null);
 
-    const ageNum = Number(age);
-    if (!age.trim()) next.age = "Age is required.";
-    else if (!Number.isInteger(ageNum) || ageNum < 13 || ageNum > 100) {
-      next.age = "Enter a valid age (13–100).";
-    }
-
-    const phoneTrim = phone.trim();
-    if (!phoneTrim) next.phone = "Contact number is required.";
-    else if (!PHONE_RE.test(phoneTrim)) next.phone = "Enter a valid phone number.";
-
-    if (!gender) next.gender = "Please select an option.";
-    if (!occupation) next.occupation = "Please select your work setup.";
-
-    const mail = signupEmail.trim();
-    if (!mail) next.email = "Email is required.";
-    else if (!EMAIL_RE.test(mail)) next.email = "Enter a valid email address.";
-
-    if (!signupPassword) next.password = "Password is required.";
-    else if (signupPassword.length < 6) next.password = "Password must be at least 6 characters.";
-
-    if (!confirmPassword) next.confirmPassword = "Confirm your password.";
-    else if (confirmPassword !== signupPassword) next.confirmPassword = "Passwords do not match.";
-
-    setSignupErrors(next);
-    return Object.keys(next).length === 0;
-  }
-
-  async function handleForgotPassword() {
-    setResetError(null);
-    setResetMessage(null);
-    const trimmedEmail = email.trim();
-
-    if (!trimmedEmail) {
-      setResetError("Enter your email address first to reset your password");
+    const emailError = validateEmail(email);
+    const passwordError = validatePassword(password);
+    if (emailError || passwordError) {
+      setNotice({ tone: "error", text: emailError ?? passwordError ?? "Check your details" });
       return;
     }
-    if (!EMAIL_RE.test(trimmedEmail)) {
-      setResetError("Enter a valid email address.");
+    if (isSignUp && !fullName.trim()) {
+      setNotice({ tone: "error", text: "Full name is required" });
+      return;
+    }
+    if (isSignUp && password !== confirmPassword) {
+      setNotice({ tone: "error", text: "Passwords do not match" });
       return;
     }
 
     const supabase = getSupabaseBrowserClient();
-    if (!supabase) {
-      setResetError(
-        "Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.",
-      );
+    if (!supabase || !configured) {
+      setNotice({ tone: "error", text: "Authentication is not configured" });
       return;
     }
 
-    setLoading(true);
+    setLoadingAction("email");
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { data: { full_name: fullName.trim() } },
+        });
+        if (error) throw error;
+        if (data.session && data.user) {
+          const { error: settingsError } = await supabase.from("user_settings").upsert(
+            { user_id: data.user.id, ...DEFAULT_USER_SETTINGS },
+            { onConflict: "user_id" },
+          );
+          if (settingsError) throw settingsError;
+          router.push("/dashboard");
+          router.refresh();
+          return;
+        }
+        setNotice({ tone: "success", text: "Account created. Check your email to confirm" });
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (error) throw error;
+        setNotice({ tone: "success", text: "Signed in successfully. Redirecting" });
+        router.push("/dashboard");
+        router.refresh();
+      }
+    } catch (error) {
+      setNotice({ tone: "error", text: getErrorMessage(error, "Authentication failed") });
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function handleForgotPassword() {
+    setNotice(null);
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setNotice({
+        tone: "error",
+        text: email.trim() ? emailError : "Enter your email address first to reset your password",
+      });
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !configured) {
+      setNotice({ tone: "error", text: "Authentication is not configured" });
+      return;
+    }
+
+    setLoadingAction("reset");
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
-      setResetMessage("Password reset link sent to your email.");
-    } catch (err) {
-      setResetError(err instanceof Error ? err.message : "Password reset failed.");
+      setNotice({ tone: "success", text: "Password reset link sent to your email" });
+    } catch (error) {
+      setNotice({ tone: "error", text: getErrorMessage(error, "Password reset failed") });
     } finally {
-      setLoading(false);
+      setLoadingAction(null);
     }
   }
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLoginError(null);
-    setLoginMessage(null);
-    if (!validateLogin()) {
-      setLoginError("Please fix the highlighted fields and try again.");
+  async function handleOAuth(provider: "google" | "apple") {
+    setNotice(null);
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !configured) {
+      setNotice({ tone: "error", text: "Authentication is not configured" });
       return;
     }
 
-    if (!configured) {
-      setLoginError("Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.");
-      return;
-    }
-
-    setLoading(true);
+    setLoadingAction(provider);
     try {
-      await signInUser(email.trim(), password);
-      setLoginMessage("Signed in successfully. Redirecting…");
-      router.push("/dashboard");
-      router.refresh();
-    } catch (err) {
-      setLoginError(err instanceof Error ? err.message : "Sign in failed.");
-    } finally {
-      setLoading(false);
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (error) throw error;
+      if (!data.url) throw new Error("OAuth redirect was not returned");
+      window.location.assign(data.url);
+    } catch (error) {
+      setLoadingAction(null);
+      setNotice({ tone: "error", text: getErrorMessage(error, `${provider} sign in failed`) });
     }
   }
 
-  async function handleSignup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSignupError(null);
-    setSignupMessage(null);
-    if (!validateSignup()) {
-      setSignupError("Please fix the highlighted fields and try again.");
-      return;
-    }
+  return (
+    <main className="min-h-screen bg-white text-[#0F172A]">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-10 lg:px-12">
+        <section className="w-full max-w-md">
+          <div className="mb-8 text-center">
+            <Link href="/" className="inline-flex items-center gap-2" aria-label="SpineSense home">
+              <Image src="/brand-mark.png" alt="" width={36} height={64} priority className="h-10 w-auto" />
+              <span className="text-xl font-bold tracking-tight">
+                <span className="text-[#0F766E]">Spine</span>
+                <span className="text-[#005AF1]">Sense</span>
+              </span>
+            </Link>
+            <h1 className="mt-8 text-2xl font-bold">{isSignUp ? "Create your account" : "Welcome back"}</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              {isSignUp ? "Start building healthier posture habits" : "Sign in to continue to SpineSense"}
+            </p>
+          </div>
 
-    if (!configured) {
-      setSignupError("Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { session } = await signUpUser(
-        signupEmail.trim(),
-        signupPassword,
-        fullName.trim(),
-        {
-          age: Number(age),
-          phone: phone.trim(),
-          gender,
-          occupation,
-        },
-      );
-
-      if (session) {
-        setSignupMessage("Account created. Redirecting to your dashboard…");
-        router.push("/dashboard");
-        router.refresh();
-      } else {
-        setSignupMessage(
-          "Account created. Check your email to confirm, then sign in.",
-        );
-      }
-    } catch (err) {
-      setSignupError(err instanceof Error ? err.message : "Sign up failed.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleOAuth() {
-    setLoginError(null);
-    setSignupError(null);
-
-    if (!configured) {
-      const msg =
-        "Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.";
-      if (signupOpen) setSignupError(msg);
-      else setLoginError(msg);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await signInWithOAuthProvider(
-        "google",
-        `${window.location.origin}/auth/callback`,
-      );
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Google sign-in failed.";
-      if (signupOpen) setSignupError(msg);
-      else setLoginError(msg);
-      setLoading(false);
-    }
-  }
-
-  const modal =
-    mounted && signupOpen
-      ? createPortal(
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-          >
+          <div className="space-y-3">
             <button
               type="button"
-              className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
-              aria-label="Close signup dialog"
-              onClick={() => setSignupOpen(false)}
-            />
-
-            <div className="relative flex max-h-[min(92vh,44rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-              <button
-                type="button"
-                onClick={() => setSignupOpen(false)}
-                className="absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-line text-slate-600 transition-colors hover:bg-mist"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-
-              <div className="overflow-y-auto px-6 py-7 sm:px-8 sm:py-8">
-                <div className="mx-auto flex max-w-xl flex-col items-center text-center">
-                  <Link href="/" className="inline-flex items-center gap-2" aria-label="SpineSense home">
-                    <Image
-                      src="/brand-mark.png"
-                      alt=""
-                      width={36}
-                      height={64}
-                      className="h-9 w-auto object-contain"
-                      aria-hidden="true"
-                    />
-                    <span className="text-lg font-bold tracking-tight">
-                      <span className="text-spine">Spine</span>
-                      <span className="text-brand">Sense</span>
-                    </span>
-                  </Link>
-                  <h2 id={titleId} className="mt-4 text-2xl font-bold tracking-tight text-ink">
-                    Create your account
-                  </h2>
-                  <p className="mt-1.5 text-sm text-ink-soft">
-                    Share a few details so we can personalize posture coaching.
-                  </p>
-                </div>
-
-                {!configured ? (
-                  <p
-                    className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-                    role="status"
-                  >
-                    Supabase is not configured yet. Copy{" "}
-                    <code className="rounded bg-white px-1 py-0.5 text-xs">.env.local.example</code> to{" "}
-                    <code className="rounded bg-white px-1 py-0.5 text-xs">.env.local</code>.
-                  </p>
-                ) : null}
-
-                <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleOAuth()}
-                    disabled={loading}
-                    className="inline-flex h-11 items-center justify-center gap-2.5 rounded-xl border border-line bg-white text-sm font-semibold text-ink transition-colors hover:bg-mist disabled:opacity-60"
-                  >
-                    <GoogleMark />
-                    Continue with Google
-                  </button>
-                </div>
-
-                <div className="my-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  <span className="h-px flex-1 bg-line" />
-                  or email
-                  <span className="h-px flex-1 bg-line" />
-                </div>
-
-                <form onSubmit={(event) => void handleSignup(event)} className="space-y-3.5" noValidate>
-                  <label className="block">
-                    <span className="mb-1.5 block text-sm font-semibold text-ink">Full name</span>
-                    <input
-                      type="text"
-                      autoComplete="name"
-                      value={fullName}
-                      onChange={(e) => {
-                        setFullName(e.target.value);
-                        setSignupErrors((p) => ({ ...p, fullName: undefined }));
-                      }}
-                      className={inputClass(Boolean(signupErrors.fullName))}
-                      placeholder="Ayesha Khan"
-                    />
-                    {signupErrors.fullName ? (
-                      <span className="mt-1 block text-xs text-red-600">{signupErrors.fullName}</span>
-                    ) : null}
-                  </label>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-1.5 block text-sm font-semibold text-ink">Age</span>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min={13}
-                        max={100}
-                        value={age}
-                        onChange={(e) => {
-                          setAge(e.target.value);
-                          setSignupErrors((p) => ({ ...p, age: undefined }));
-                        }}
-                        className={inputClass(Boolean(signupErrors.age))}
-                        placeholder="28"
-                      />
-                      {signupErrors.age ? (
-                        <span className="mt-1 block text-xs text-red-600">{signupErrors.age}</span>
-                      ) : null}
-                    </label>
-                    <label className="block">
-                      <span className="mb-1.5 block text-sm font-semibold text-ink">Gender</span>
-                      <select
-                        value={gender}
-                        onChange={(e) => {
-                          setGender(e.target.value);
-                          setSignupErrors((p) => ({ ...p, gender: undefined }));
-                        }}
-                        className={`${inputClass(Boolean(signupErrors.gender))} ${
-                          gender ? "text-ink" : "text-slate-400"
-                        }`}
-                      >
-                        {GENDER_OPTIONS.map((o) => (
-                          <option key={o.value || "empty"} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                      {signupErrors.gender ? (
-                        <span className="mt-1 block text-xs text-red-600">{signupErrors.gender}</span>
-                      ) : null}
-                    </label>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-1.5 block text-sm font-semibold text-ink">Contact number</span>
-                      <input
-                        type="tel"
-                        autoComplete="tel"
-                        value={phone}
-                        onChange={(e) => {
-                          setPhone(e.target.value);
-                          setSignupErrors((p) => ({ ...p, phone: undefined }));
-                        }}
-                        className={inputClass(Boolean(signupErrors.phone))}
-                        placeholder="+92 300 1234567"
-                      />
-                      {signupErrors.phone ? (
-                        <span className="mt-1 block text-xs text-red-600">{signupErrors.phone}</span>
-                      ) : null}
-                    </label>
-                    <label className="block">
-                      <span className="mb-1.5 block text-sm font-semibold text-ink">Work setup</span>
-                      <select
-                        value={occupation}
-                        onChange={(e) => {
-                          setOccupation(e.target.value);
-                          setSignupErrors((p) => ({ ...p, occupation: undefined }));
-                        }}
-                        className={`${inputClass(Boolean(signupErrors.occupation))} ${
-                          occupation ? "text-ink" : "text-slate-400"
-                        }`}
-                      >
-                        {OCCUPATION_OPTIONS.map((o) => (
-                          <option key={o.value || "empty"} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                      {signupErrors.occupation ? (
-                        <span className="mt-1 block text-xs text-red-600">{signupErrors.occupation}</span>
-                      ) : null}
-                    </label>
-                  </div>
-
-                  <label className="block">
-                    <span className="mb-1.5 block text-sm font-semibold text-ink">Email address</span>
-                    <input
-                      type="email"
-                      autoComplete="email"
-                      value={signupEmail}
-                      onChange={(e) => {
-                        setSignupEmail(e.target.value);
-                        setSignupErrors((p) => ({ ...p, email: undefined }));
-                      }}
-                      className={inputClass(Boolean(signupErrors.email))}
-                      placeholder="you@company.com"
-                    />
-                    {signupErrors.email ? (
-                      <span className="mt-1 block text-xs text-red-600">{signupErrors.email}</span>
-                    ) : null}
-                  </label>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-1.5 block text-sm font-semibold text-ink">Password</span>
-                      <input
-                        type="password"
-                        autoComplete="new-password"
-                        value={signupPassword}
-                        onChange={(e) => {
-                          setSignupPassword(e.target.value);
-                          setSignupErrors((p) => ({ ...p, password: undefined }));
-                        }}
-                        className={inputClass(Boolean(signupErrors.password))}
-                        placeholder="••••••••"
-                      />
-                      {signupErrors.password ? (
-                        <span className="mt-1 block text-xs text-red-600">{signupErrors.password}</span>
-                      ) : null}
-                    </label>
-                    <label className="block">
-                      <span className="mb-1.5 block text-sm font-semibold text-ink">Confirm password</span>
-                      <input
-                        type="password"
-                        autoComplete="new-password"
-                        value={confirmPassword}
-                        onChange={(e) => {
-                          setConfirmPassword(e.target.value);
-                          setSignupErrors((p) => ({ ...p, confirmPassword: undefined }));
-                        }}
-                        className={inputClass(Boolean(signupErrors.confirmPassword))}
-                        placeholder="••••••••"
-                      />
-                      {signupErrors.confirmPassword ? (
-                        <span className="mt-1 block text-xs text-red-600">
-                          {signupErrors.confirmPassword}
-                        </span>
-                      ) : null}
-                    </label>
-                  </div>
-
-                  {signupError ? (
-                    <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {signupError}
-                    </p>
-                  ) : null}
-                  {signupMessage ? (
-                    <p className="rounded-xl border border-spine/25 bg-spine-soft px-3 py-2 text-sm text-spine-deep">
-                      {signupMessage}
-                    </p>
-                  ) : null}
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#0B1F4D] text-sm font-semibold text-white transition-colors hover:bg-[#071536] disabled:opacity-60"
-                  >
-                    {loading ? "Please wait…" : "Create account"}
-                  </button>
-                </form>
-
-                <p className="mt-5 text-center text-sm text-ink-soft">
-                  Already have an account?{" "}
-                  <button
-                    type="button"
-                    onClick={() => setSignupOpen(false)}
-                    className="font-semibold text-brand hover:underline"
-                  >
-                    Sign in
-                  </button>
-                </p>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )
-      : null;
-
-  return (
-    <>
-      {/* Orbix-style split: both panes min-h-screen, content vertically centered */}
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-        <aside className="relative flex flex-col justify-between bg-[#F5F7FB] px-8 py-10 sm:px-12 lg:px-14 lg:py-12">
-          <div className="relative flex flex-1 flex-col justify-center">
-            <div className="max-w-xl">
-              <h1 className="text-4xl font-bold leading-[1.12] tracking-tight text-ink xl:text-[2.75rem]">
-                Better posture.
-                <span className="mt-1 block text-spine">Healthier you.</span>
-              </h1>
-              <p className="mt-4 text-base text-ink-soft">Your ergonomics workspace starts here</p>
-
-              <ul className="mt-10 grid grid-cols-2 gap-3 xl:grid-cols-4">
-                {FEATURES.map((item) => {
-                  const Icon = item.icon;
-                  const tone =
-                    item.tone === "spine"
-                      ? "from-spine-soft/90 to-white text-spine"
-                      : "from-brand-soft to-white text-brand";
-                  return (
-                    <li
-                      key={item.title}
-                      className={`flex min-h-[8.25rem] flex-col justify-between rounded-2xl border border-white/90 bg-gradient-to-b p-4 shadow-[0_10px_28px_-18px_rgba(15,23,42,0.35)] ${tone}`}
-                    >
-                      <Icon className="h-6 w-6" strokeWidth={1.75} aria-hidden="true" />
-                      <p className="text-sm font-medium leading-5 text-ink">{item.title}</p>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+              onClick={() => void handleOAuth("google")}
+              disabled={loadingAction !== null}
+              className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold transition hover:bg-slate-50 disabled:opacity-60"
+            >
+              <span className="text-base font-bold text-[#4285F4]">G</span>
+              {loadingAction === "google" ? "Connecting" : "Continue with Google"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleOAuth("apple")}
+              disabled={loadingAction !== null}
+              className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-[#0F172A] bg-[#0F172A] text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+            >
+              <span aria-hidden="true">●</span>
+              {loadingAction === "apple" ? "Connecting" : "Continue with Apple"}
+            </button>
           </div>
 
-          <p className="relative mt-10 text-sm text-ink-soft">
-            AI-assisted posture workflows
-            <span className="mx-2 text-slate-300">·</span>
-            <span className="font-medium text-brand">Real-time skeleton visibility</span>
-            <span className="mx-2 text-slate-300">·</span>
-            <span className="font-medium text-spine">Green when aligned</span>
-          </p>
-        </aside>
+          <div className="my-7 flex items-center gap-3 text-xs font-semibold uppercase tracking-widest text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            Or email
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
 
-        <section className="flex flex-col justify-center bg-white px-6 py-12 sm:px-10 lg:px-16">
-          <div className="mx-auto w-full max-w-[22rem]">
-            <div className="flex flex-col items-center text-center">
-              <Link href="/" className="inline-flex items-center gap-2" aria-label="SpineSense home">
-                <Image
-                  src="/brand-mark.png"
-                  alt=""
-                  width={40}
-                  height={72}
-                  priority
-                  className="h-10 w-auto object-contain"
-                  aria-hidden="true"
-                />
-                <span className="text-xl font-bold tracking-tight">
-                  <span className="text-spine">Spine</span>
-                  <span className="text-brand">Sense</span>
-                </span>
-              </Link>
-            </div>
-
-            {!configured ? (
-              <p
-                className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-                role="status"
-              >
-                Supabase is not configured yet. Copy{" "}
-                <code className="rounded bg-white px-1 py-0.5 text-xs">.env.local.example</code> to{" "}
-                <code className="rounded bg-white px-1 py-0.5 text-xs">.env.local</code>.
-              </p>
-            ) : null}
-
-            <div className="mt-8 grid gap-2.5">
-              <button
-                type="button"
-                onClick={() => void handleOAuth()}
-                disabled={loading}
-                className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-line bg-white text-sm font-semibold text-ink transition-colors hover:bg-mist disabled:opacity-60"
-              >
-                <GoogleMark />
-                Continue with Google
-              </button>
-            </div>
-
-            <div className="my-6 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-              <span className="h-px flex-1 bg-line" />
-              or email
-              <span className="h-px flex-1 bg-line" />
-            </div>
-
-            <form onSubmit={(event) => void handleLogin(event)} className="space-y-4" noValidate>
-              <label className="block">
-                <span className="mb-1.5 block text-sm font-semibold text-ink">Email address</span>
-                <input
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setLoginErrors((p) => ({ ...p, email: undefined }));
-                  }}
-                  className={inputClass(Boolean(loginErrors.email))}
-                  placeholder="you@company.com"
-                />
-                {loginErrors.email ? (
-                  <span className="mt-1 block text-xs text-red-600">{loginErrors.email}</span>
-                ) : null}
+          <form onSubmit={(event) => void handleEmailSubmit(event)} className="space-y-4" noValidate>
+            {isSignUp ? (
+              <label className="block text-sm font-semibold">
+                Full name
+                <input className={inputClass} value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" />
               </label>
-
-              <div>
-                <div className="mb-1.5 flex items-center justify-between gap-3">
-                  <label htmlFor="login-password" className="text-sm font-semibold text-ink">
-                    Password
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => void handleForgotPassword()}
-                    disabled={loading}
-                    className="text-xs font-medium text-ink-soft hover:text-brand disabled:opacity-60"
-                  >
+            ) : null}
+            <label className="block text-sm font-semibold">
+              Email address
+              <input className={inputClass} type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
+            </label>
+            <div>
+              <div className="flex items-center justify-between text-sm font-semibold">
+                <label htmlFor="auth-password">Password</label>
+                {!isSignUp ? (
+                  <button type="button" onClick={() => void handleForgotPassword()} disabled={loadingAction !== null} className="font-medium text-slate-500 hover:text-[#005AF1]">
                     Forgot password?
                   </button>
-                </div>
-                <input
-                  id="login-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setLoginErrors((p) => ({ ...p, password: undefined }));
-                  }}
-                  className={inputClass(Boolean(loginErrors.password))}
-                  placeholder="Enter your password"
-                />
-                {loginErrors.password ? (
-                  <span className="mt-1 block text-xs text-red-600">{loginErrors.password}</span>
                 ) : null}
               </div>
+              <input id="auth-password" className={inputClass} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={isSignUp ? "new-password" : "current-password"} />
+            </div>
+            {isSignUp ? (
+              <label className="block text-sm font-semibold">
+                Confirm password
+                <input className={inputClass} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
+              </label>
+            ) : null}
 
-              {loginError ? (
-                <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {loginError}
-                </p>
-              ) : null}
-              {loginMessage ? (
-                <p className="rounded-xl border border-spine/25 bg-spine-soft px-3 py-2 text-sm text-spine-deep">
-                  {loginMessage}
-                </p>
-              ) : null}
-              {resetError ? (
-                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {resetError}
-                </p>
-              ) : null}
-              {resetMessage ? (
-                <p role="status" className="rounded-xl border border-spine/25 bg-spine-soft px-3 py-2 text-sm text-spine-deep">
-                  {resetMessage}
-                </p>
-              ) : null}
+            <NoticeMessage notice={notice} />
+            <button type="submit" disabled={loadingAction !== null} className="flex h-11 w-full items-center justify-center rounded-xl bg-[#0F172A] text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
+              {loadingAction === "email" ? "Please wait" : isSignUp ? "Create account" : "Sign in"}
+            </button>
+          </form>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#0B1F4D] text-sm font-semibold text-white transition-colors hover:bg-[#071536] disabled:opacity-60"
-              >
-                {loading ? "Please wait…" : "Sign in"}
-              </button>
-            </form>
-
-            <p className="mt-6 text-center text-sm text-ink-soft">
-              Don&apos;t have an account?{" "}
-              <button
-                type="button"
-                onClick={() => setSignupOpen(true)}
-                className="font-semibold text-brand hover:underline"
-              >
-                Sign up
-              </button>
-            </p>
-
-            <p className="mt-8 text-center text-xs text-slate-400">
-              <Link href="/" className="hover:text-brand">
-                ← Back to home
-              </Link>
-            </p>
-          </div>
+          <p className="mt-6 text-center text-sm text-slate-500">
+            {isSignUp ? "Already have an account" : "Do not have an account"}{" "}
+            <button type="button" onClick={() => switchMode(isSignUp ? "signIn" : "signUp")} className="font-semibold text-[#005AF1] hover:underline">
+              {isSignUp ? "Sign in" : "Sign up"}
+            </button>
+          </p>
         </section>
       </div>
-
-      {modal}
-    </>
-  );
-}
-
-function GoogleMark() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" aria-hidden="true">
-      <path
-        fill="#4285F4"
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23Z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 0 0 1 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84Z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z"
-      />
-    </svg>
+    </main>
   );
 }
