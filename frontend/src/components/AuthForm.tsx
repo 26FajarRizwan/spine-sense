@@ -13,7 +13,10 @@ import {
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { signInUser, signInWithOAuthProvider, signUpUser } from "@/lib/auth";
-import { isSupabaseConfigured } from "@/lib/supabaseClient";
+import {
+  getSupabaseBrowserClient,
+  isSupabaseConfigured,
+} from "@/lib/supabaseClient";
 import { useHydrated } from "@/lib/useHydrated";
 
 interface AuthFormProps {
@@ -81,6 +84,8 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   const [loginErrors, setLoginErrors] = useState<LoginErrors>({});
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [fullName, setFullName] = useState("");
@@ -155,6 +160,42 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
     return Object.keys(next).length === 0;
   }
 
+  async function handleForgotPassword() {
+    setResetError(null);
+    setResetMessage(null);
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setResetError("Enter your email address first to reset your password");
+      return;
+    }
+    if (!EMAIL_RE.test(trimmedEmail)) {
+      setResetError("Enter a valid email address.");
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setResetError(
+        "Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable auth.",
+      );
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      setResetMessage("Password reset link sent to your email.");
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Password reset failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoginError(null);
@@ -226,7 +267,7 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
     }
   }
 
-  async function handleOAuth(provider: "google" | "apple") {
+  async function handleOAuth() {
     setLoginError(null);
     setSignupError(null);
 
@@ -241,16 +282,14 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
     setLoading(true);
     try {
       await signInWithOAuthProvider(
-        provider,
-        `${window.location.origin}/dashboard`,
+        "google",
+        `${window.location.origin}/auth/callback`,
       );
     } catch (err) {
       const msg =
         err instanceof Error
           ? err.message
-          : provider === "apple"
-            ? "Apple sign-in failed."
-            : "Google sign-in failed.";
+          : "Google sign-in failed.";
       if (signupOpen) setSignupError(msg);
       else setLoginError(msg);
       setLoading(false);
@@ -321,21 +360,12 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
                 <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
                   <button
                     type="button"
-                    onClick={() => void handleOAuth("google")}
+                    onClick={() => void handleOAuth()}
                     disabled={loading}
                     className="inline-flex h-11 items-center justify-center gap-2.5 rounded-xl border border-line bg-white text-sm font-semibold text-ink transition-colors hover:bg-mist disabled:opacity-60"
                   >
                     <GoogleMark />
                     Continue with Google
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleOAuth("apple")}
-                    disabled={loading}
-                    className="inline-flex h-11 items-center justify-center gap-2.5 rounded-xl border border-ink bg-ink text-sm font-semibold text-white transition-colors hover:bg-[#1e293b] disabled:opacity-60"
-                  >
-                    <AppleMark />
-                    Continue with Apple
                   </button>
                 </div>
 
@@ -621,21 +651,12 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
             <div className="mt-8 grid gap-2.5">
               <button
                 type="button"
-                onClick={() => void handleOAuth("google")}
+                onClick={() => void handleOAuth()}
                 disabled={loading}
                 className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-line bg-white text-sm font-semibold text-ink transition-colors hover:bg-mist disabled:opacity-60"
               >
                 <GoogleMark />
                 Continue with Google
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleOAuth("apple")}
-                disabled={loading}
-                className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-ink bg-ink text-sm font-semibold text-white transition-colors hover:bg-[#1e293b] disabled:opacity-60"
-              >
-                <AppleMark />
-                Continue with Apple
               </button>
             </div>
 
@@ -669,7 +690,14 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
                   <label htmlFor="login-password" className="text-sm font-semibold text-ink">
                     Password
                   </label>
-                  <span className="text-xs font-medium text-ink-soft">Forgot password?</span>
+                  <button
+                    type="button"
+                    onClick={() => void handleForgotPassword()}
+                    disabled={loading}
+                    className="text-xs font-medium text-ink-soft hover:text-brand disabled:opacity-60"
+                  >
+                    Forgot password?
+                  </button>
                 </div>
                 <input
                   id="login-password"
@@ -696,6 +724,16 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
               {loginMessage ? (
                 <p className="rounded-xl border border-spine/25 bg-spine-soft px-3 py-2 text-sm text-spine-deep">
                   {loginMessage}
+                </p>
+              ) : null}
+              {resetError ? (
+                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {resetError}
+                </p>
+              ) : null}
+              {resetMessage ? (
+                <p role="status" className="rounded-xl border border-spine/25 bg-spine-soft px-3 py-2 text-sm text-spine-deep">
+                  {resetMessage}
                 </p>
               ) : null}
 
@@ -752,14 +790,6 @@ function GoogleMark() {
         fill="#EA4335"
         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z"
       />
-    </svg>
-  );
-}
-
-function AppleMark() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="currentColor" aria-hidden="true">
-      <path d="M16.365 1.43c0 1.14-.42 2.23-1.18 3.1-.79.9-2.1 1.6-3.2 1.5-.14-1.1.4-2.26 1.14-3.12.8-.92 2.2-1.6 3.24-1.48ZM19.5 17.2c-.55 1.26-.82 1.82-1.54 2.93-.99 1.5-2.39 3.37-4.13 3.39-1.54.02-1.94-.99-4.04-.98-2.1.01-2.54 1-4.08.98-1.74-.02-3.07-1.7-4.06-3.2-2.77-4.2-3.06-9.14-1.35-11.74 1.2-1.82 3.1-2.88 4.88-2.88 1.82 0 2.96 1 4.46 1 1.45 0 2.33-1.01 4.43-1.01 1.58 0 3.25.86 4.44 2.35-3.9 2.14-3.27 7.7.99 9.16Z" />
     </svg>
   );
 }
