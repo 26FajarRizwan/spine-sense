@@ -8,11 +8,12 @@ import type { PostureStatus } from "@/types/posture";
 
 interface CameraFeedProps {
   active: boolean;
+  privacyMode: boolean;
   postureStatus: PostureStatus;
   onActiveChange: (active: boolean) => void;
 }
 
-export function CameraFeed({ active, postureStatus, onActiveChange }: CameraFeedProps) {
+export function CameraFeed({ active, privacyMode, postureStatus, onActiveChange }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const postureRef = useRef(postureStatus);
@@ -124,10 +125,10 @@ export function CameraFeed({ active, postureStatus, onActiveChange }: CameraFeed
         </button>
       </div>
 
-      <div className="relative aspect-video min-h-72 bg-mist">
+      <div className={`relative aspect-video min-h-72 ${privacyMode ? "bg-[#0F172A]" : "bg-mist"}`}>
         <video
           ref={videoRef}
-          className={`h-full w-full -scale-x-100 object-cover ${active ? "opacity-100" : "opacity-0"}`}
+          className={`h-full w-full -scale-x-100 object-cover ${active && !privacyMode ? "opacity-100" : "opacity-0"}`}
           playsInline
           muted
           autoPlay
@@ -140,7 +141,7 @@ export function CameraFeed({ active, postureStatus, onActiveChange }: CameraFeed
 
         {active ? (
           <p className="absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-ink/75 px-3 py-1 text-xs font-medium text-white">
-            Skeleton overlay
+            {privacyMode ? "Privacy mode" : "Skeleton overlay"}
           </p>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">

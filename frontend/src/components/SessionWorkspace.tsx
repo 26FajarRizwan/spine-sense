@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff } from "lucide-react";
+import { Bell, BellOff, Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { CameraFeed } from "@/components/CameraFeed";
 import { PostureHUD } from "@/components/PostureHUD";
@@ -28,6 +28,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
   const [slumpCount, setSlumpCount] = useState(0);
   const [audioAlerts, setAudioAlerts] = useState(true);
   const [audioVolume, setAudioVolume] = useState(0.7);
+  const [privacyMode, setPrivacyMode] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -131,6 +132,9 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
   }, [active]);
 
   const status = statusFromScore(score);
+  const neckAlignment = Math.max(54, Math.min(98, Math.round(score + 3)));
+  const shoulderBalance = Math.max(58, Math.min(99, Math.round(score + 6)));
+  const torsoUprightAngle = Math.max(55, Math.min(97, Math.round(score)));
 
   async function handleEndAndSave() {
     if (!user || elapsedSeconds === 0) return;
@@ -203,28 +207,22 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setAudioAlerts((value) => !value)}
-            aria-pressed={audioAlerts}
-            className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${
-              audioAlerts
-                ? "border-spine bg-spine text-white hover:bg-spine-hover"
-                : "border-line bg-white text-ink-soft hover:border-brand/30 hover:text-brand"
-            }`}
-          >
-            {audioAlerts ? (
-              <Bell className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <BellOff className="h-4 w-4" aria-hidden="true" />
-            )}
-            Audio {audioAlerts ? "on" : "off"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setAudioAlerts((value) => !value)} aria-pressed={audioAlerts} className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${audioAlerts ? "border-spine bg-spine text-white hover:bg-spine-hover" : "border-line bg-white text-ink-soft hover:border-brand/30 hover:text-brand"}`}>
+              {audioAlerts ? <Bell className="h-4 w-4" aria-hidden="true" /> : <BellOff className="h-4 w-4" aria-hidden="true" />}
+              Audio {audioAlerts ? "on" : "off"}
+            </button>
+            <button type="button" onClick={() => setPrivacyMode((value) => !value)} aria-pressed={privacyMode} className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${privacyMode ? "border-ink bg-ink text-white" : "border-line bg-white text-ink-soft hover:border-brand/30 hover:text-brand"}`}>
+              {privacyMode ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+              Privacy Mode (Skeleton Only)
+            </button>
+          </div>
         </div>
 
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
           <CameraFeed
             active={active}
+            privacyMode={privacyMode}
             postureStatus={status}
             onActiveChange={onActiveChange}
           />
@@ -235,6 +233,9 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
               elapsedSeconds={elapsedSeconds}
               running={active}
               audioAlerts={audioAlerts}
+              neckAlignment={neckAlignment}
+              shoulderBalance={shoulderBalance}
+              torsoUprightAngle={torsoUprightAngle}
             />
           </div>
         </div>

@@ -5,7 +5,7 @@ import { ArrowRight, LayoutDashboard, Play } from "lucide-react";
 export const metadata: Metadata = {
   title: "Home",
   description:
-    "SpineSense real-time AI posture and ergonomics assistant with live skeleton tracking.",
+    "SpineSense realtime AI posture and ergonomics assistant with live skeleton tracking.",
 };
 
 const FEATURES = [
@@ -15,7 +15,7 @@ const FEATURES = [
   },
   {
     title: "Instant score",
-    body: "0–100 gauge that shifts from good to warning to slump.",
+    body: "0 to 100 gauge that shifts from good to warning to slump.",
   },
   {
     title: "Session analytics",
@@ -70,7 +70,7 @@ export default function HomePage() {
                 <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft">
                   Score
                 </dt>
-                <dd className="mt-1 text-lg font-bold tabular-nums text-ink">0–100</dd>
+                <dd className="mt-1 text-lg font-bold tabular-nums text-ink">0 to 100</dd>
               </div>
               <div>
                 <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft">

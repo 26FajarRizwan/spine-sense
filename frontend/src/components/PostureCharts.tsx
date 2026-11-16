@@ -18,6 +18,7 @@ interface PostureChartsProps {
   dailyTrend: TrendPoint[];
   weeklyTrend: TrendPoint[];
   slumps: SlumpBucket[];
+  empty: boolean;
 }
 
 function ChartTooltip({
@@ -48,6 +49,7 @@ export function PostureCharts({
   dailyTrend,
   weeklyTrend,
   slumps,
+  empty,
 }: PostureChartsProps) {
   const [period, setPeriod] = useState<"daily" | "weekly">("weekly");
   const trend = period === "daily" ? dailyTrend : weeklyTrend;
@@ -79,7 +81,7 @@ export function PostureCharts({
           </div>
         </div>
         <div className="relative h-72">
-          {trend.length ? (
+          {!empty && trend.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trend} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                 <defs>
@@ -115,8 +117,8 @@ export function PostureCharts({
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-full items-center justify-center text-center text-sm text-ink-soft">
-              No sessions to chart for this period.
+            <div className="flex h-full items-center justify-center rounded-xl bg-mist px-6 text-center text-sm leading-6 text-ink-soft">
+              No posture data recorded yet. Run your first live session to populate trends.
             </div>
           )}
         </div>
@@ -128,6 +130,11 @@ export function PostureCharts({
           <p className="mt-1 text-sm text-ink-soft">Slump count across your tracked periods.</p>
         </div>
         <div className="h-72">
+          {empty ? (
+            <div className="flex h-full items-center justify-center rounded-xl bg-mist px-6 text-center text-sm leading-6 text-ink-soft">
+              No posture data recorded yet. Run your first live session to populate trends.
+            </div>
+          ) : (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={slumps} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
               <CartesianGrid stroke="#E2E8F0" vertical={false} />
@@ -147,6 +154,7 @@ export function PostureCharts({
               <Bar dataKey="slumps" fill="#EF4444" radius={[8, 8, 0, 0]} maxBarSize={42} />
             </BarChart>
           </ResponsiveContainer>
+          )}
         </div>
       </section>
     </div>

@@ -92,6 +92,7 @@ function DashboardTrends({ sessions }: { sessions: SessionRow[] }) {
       dailyTrend={dailyTrend}
       weeklyTrend={weeklyTrend}
       slumps={slumpBuckets}
+      empty={sessions.length === 0}
     />
   );
 }

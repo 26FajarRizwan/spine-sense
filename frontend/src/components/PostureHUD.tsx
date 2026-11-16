@@ -8,6 +8,9 @@ interface PostureHUDProps {
   elapsedSeconds: number;
   running: boolean;
   audioAlerts?: boolean;
+  neckAlignment?: number;
+  shoulderBalance?: number;
+  torsoUprightAngle?: number;
 }
 
 const STATUS_STYLES: Record<
@@ -69,6 +72,9 @@ export function PostureHUD({
   elapsedSeconds,
   running,
   audioAlerts = false,
+  neckAlignment = 88,
+  shoulderBalance = 92,
+  torsoUprightAngle = 86,
 }: PostureHUDProps) {
   const tone = STATUS_STYLES[status];
   const label = postureLabel(status);
@@ -94,6 +100,19 @@ export function PostureHUD({
       </div>
 
       <p className="mt-2 text-center text-sm leading-6 text-ink-soft">{postureCue(status)}</p>
+
+      <div className="mt-6 grid grid-cols-3 gap-2">
+        {[
+          ["Neck Alignment", `${neckAlignment}%`],
+          ["Shoulder Balance", `${shoulderBalance}%`],
+          ["Torso Upright Angle", `${torsoUprightAngle}°`],
+        ].map(([labelText, value]) => (
+          <div key={labelText} className="rounded-xl border border-line bg-white px-2 py-3 text-center">
+            <p className="text-[10px] font-semibold leading-4 text-ink-soft">{labelText}</p>
+            <p className="mt-1 text-sm font-bold tabular-nums text-ink">{value}</p>
+          </div>
+        ))}
+      </div>
 
       <div className="mt-6 flex items-center justify-between rounded-xl border border-line bg-mist px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-medium text-ink-soft">
