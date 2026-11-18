@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
 import { SessionProvider } from "@/components/SessionProvider";
 import "./globals.css";
 
@@ -11,6 +11,13 @@ const plusJakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+  variable: "--font-playfair",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL("http://localhost:3000"),
   title: {
@@ -18,7 +25,7 @@ export const metadata: Metadata = {
     template: "%s · SpineSense",
   },
   description:
-    "AI-powered smart posture and ergonomics assistant. Monitor alignment, score your posture, and review session analytics.",
+    "AI powered smart posture and ergonomics assistant. Monitor alignment, score your posture and review session analytics.",
   applicationName: "SpineSense",
   keywords: [
     "posture",
@@ -32,7 +39,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "SpineSense",
     description:
-      "Real-time AI posture and ergonomics assistant with live skeleton tracking.",
+      "Realtime AI posture and ergonomics assistant with live skeleton tracking.",
     type: "website",
     siteName: "SpineSense",
   },
@@ -40,7 +47,7 @@ export const metadata: Metadata = {
     card: "summary",
     title: "SpineSense",
     description:
-      "Real-time AI posture and ergonomics assistant with live skeleton tracking.",
+      "Realtime AI posture and ergonomics assistant with live skeleton tracking.",
   },
   icons: {
     icon: [{ url: "/brand-mark.png", type: "image/png" }],
@@ -56,7 +63,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${plusJakarta.variable} antialiased`}>
+    <html lang="en" className={`${plusJakarta.variable} ${playfair.variable} antialiased`}>
       <body className="flex min-h-screen flex-col bg-white font-sans text-ink antialiased">
         <SessionProvider>{children}</SessionProvider>
       </body>

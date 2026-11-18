@@ -151,7 +151,7 @@ export function CameraFeed({ active, privacyMode, postureStatus, onActiveChange 
             <div>
               <p className="text-base font-semibold text-ink">Camera inactive</p>
               <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-ink-soft">
-                {error ?? "Enable the camera to begin real-time skeleton tracking."}
+                {error ?? "Enable the camera to begin realtime skeleton tracking."}
               </p>
             </div>
           </div>

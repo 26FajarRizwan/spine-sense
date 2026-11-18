@@ -261,7 +261,7 @@ export function Header() {
                       key={item.href}
                       href={item.href}
                       aria-current={active ? "page" : undefined}
-                      className={`relative whitespace-nowrap px-3.5 py-2 text-sm font-medium transition-colors ${
+                      className={`relative whitespace-nowrap rounded-md px-3.5 py-2 text-sm font-medium transition-colors duration-200 ${
                         active ? "text-brand" : "text-slate-500 hover:text-slate-900"
                       }`}
                     >
@@ -283,13 +283,13 @@ export function Header() {
               <>
                 <Link
                   href="/login"
-                  className="hidden h-10 items-center justify-center whitespace-nowrap rounded-xl border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:border-brand/30 hover:text-brand md:inline-flex"
+                  className="hidden h-10 items-center justify-center whitespace-nowrap rounded-xl border border-line bg-white px-4 text-sm font-semibold text-ink shadow-xs transition-[color,border-color,transform] duration-200 hover:border-brand hover:text-brand active:scale-[0.99] md:inline-flex"
                 >
                   Login
                 </Link>
                 <Link
                   href="/signup"
-                  className="hidden h-10 items-center justify-center whitespace-nowrap rounded-xl bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-hover md:inline-flex"
+                  className="hidden h-10 items-center justify-center whitespace-nowrap rounded-xl bg-brand px-4 text-sm font-semibold text-white shadow-xs transition-[background-color,transform] duration-200 hover:bg-brand-hover active:scale-[0.99] md:inline-flex"
                 >
                   Sign Up
                 </Link>
@@ -303,7 +303,7 @@ export function Header() {
                   aria-expanded={menuOpen}
                   aria-haspopup="menu"
                   onClick={() => setMenuOpen((v) => !v)}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white py-1 pl-1 pr-2.5 text-sm font-semibold text-ink transition-colors hover:border-brand/30"
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white py-1 pl-1 pr-2.5 text-sm font-semibold text-ink shadow-xs transition-[border-color,transform] duration-200 hover:border-brand active:scale-[0.99]"
                 >
                   <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-spine text-xs font-bold text-white">
                     {user.initials}

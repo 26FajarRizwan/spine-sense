@@ -96,7 +96,7 @@ export default function ProfilePage() {
       return;
     }
     if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword)) {
-      setNotice({ tone: "error", text: "Password needs an uppercase letter, a lowercase letter, and a number" });
+      setNotice({ tone: "error", text: "Password needs an uppercase letter, a lowercase letter and a number" });
       return;
     }
     if (newPassword !== confirmPassword) {

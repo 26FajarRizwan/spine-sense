@@ -202,8 +202,8 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
             </h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-ink-soft">
               {protectedMode
-                ? "Track live posture, hear critical slump alerts, and save your session summary to your account."
-                : "Enable the camera to test skeleton overlay, live score, and optional audio alerts — no account required."}
+                ? "Track live posture, hear critical slump alerts and save your session summary to your account."
+                : "Enable the camera to test skeleton overlay, live score and optional audio alerts. No account required."}
             </p>
           </div>
 

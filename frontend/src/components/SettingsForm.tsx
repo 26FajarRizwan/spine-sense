@@ -190,7 +190,7 @@ export function SettingsForm() {
               Automated email posture reports
             </h2>
             <p className="mt-1 text-sm leading-6 text-ink-soft">
-              Receive sitting duration, average posture scores, and slouch reduction
+              Receive sitting duration, average posture scores and slouch reduction
               metrics directly in your inbox.
             </p>
           </div>

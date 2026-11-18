@@ -5,7 +5,6 @@ import type { User } from "@supabase/supabase-js";
 import { signOutUser } from "@/lib/auth";
 import {
   getSupabaseBrowserClient,
-  isSupabaseConfigured,
 } from "@/lib/supabaseClient";
 
 export interface AuthUserInfo {
@@ -34,22 +33,14 @@ function toInfo(user: User): AuthUserInfo {
 }
 
 export function useAuth() {
+  const supabase = getSupabaseBrowserClient();
   const [user, setUser] = useState<AuthUserInfo | null>(null);
-  const [loading, setLoading] = useState(() => isSupabaseConfigured());
+  const [loading, setLoading] = useState(() => Boolean(supabase));
 
   useEffect(() => {
     let cancelled = false;
 
-    if (!isSupabaseConfigured()) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-
-    const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      setUser(null);
-      setLoading(false);
       return;
     }
 
@@ -71,11 +62,11 @@ export function useAuth() {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [supabase]);
 
   async function signOut() {
     try {
-      if (isSupabaseConfigured()) await signOutUser();
+      if (supabase) await signOutUser();
     } finally {
       setUser(null);
     }

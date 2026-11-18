@@ -4,7 +4,7 @@ import { SettingsForm } from "@/components/SettingsForm";
 export const metadata: Metadata = {
   title: "Settings",
   description:
-    "Configure SpineSense email reports, posture sensitivity, and audio alerts.",
+    "Configure SpineSense email reports, posture sensitivity and audio alerts.",
 };
 
 export default function SettingsPage() {
@@ -19,7 +19,7 @@ export default function SettingsPage() {
             Settings
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-ink-soft">
-            Personalize email reports, slouch detection sensitivity, and audio alerts.
+            Personalize email reports, slouch detection sensitivity and audio alerts.
           </p>
         </div>
 

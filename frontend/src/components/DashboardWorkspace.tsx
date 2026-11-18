@@ -207,7 +207,7 @@ export function DashboardWorkspace() {
               Dashboard
             </h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-ink-soft">
-              Your saved posture sessions, trends, and sitting time.
+              Your saved posture sessions, trends and sitting time.
             </p>
           </div>
           <Link

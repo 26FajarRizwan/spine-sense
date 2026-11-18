@@ -8,18 +8,20 @@
   --ss-ink: #0f172a;
   --ss-ink-soft: #475569;
   --ss-line: #e2e8f0;
-  --ss-brand: #005af1;
-  --ss-brand-hover: #0048c9;
-  --ss-brand-soft: #e8f0ff;
+  --ss-brand: #2563eb;
+  --ss-brand-hover: #1d4ed8;
+  --ss-brand-soft: #eff6ff;
   --ss-brand-muted: #7aa7ff;
-  --ss-spine: #01aa6c;
-  --ss-spine-hover: #01915c;
-  --ss-spine-soft: #e6f7f0;
+  --ss-spine: #059669;
+  --ss-spine-hover: #047857;
+  --ss-spine-soft: #ecfdf5;
   --ss-spine-deep: #0f766e;
-  --ss-accent: #005af1;
-  --ss-accent-soft: #e8f0ff;
+  --ss-sky-tint: #f0f9ff;
+  --ss-emerald-tint: #ecfdf5;
+  --ss-accent: #2563eb;
+  --ss-accent-soft: #eff6ff;
   --ss-accent-muted: #7aa7ff;
-  --ss-good: #01aa6c;
+  --ss-good: #059669;
   --ss-warning: #f59e0b;
   --ss-slump: #ef4444;
   --ss-good-ink: #047857;
@@ -43,6 +45,8 @@
   --color-spine-hover: var(--ss-spine-hover);
   --color-spine-soft: var(--ss-spine-soft);
   --color-spine-deep: var(--ss-spine-deep);
+  --color-sky-tint: var(--ss-sky-tint);
+  --color-emerald-tint: var(--ss-emerald-tint);
   --color-accent: var(--ss-accent);
   --color-accent-soft: var(--ss-accent-soft);
   --color-accent-muted: var(--ss-accent-muted);
@@ -79,7 +83,8 @@ body {
 h1,
 h2,
 h3 {
-  letter-spacing: -0.025em;
+  font-family: var(--font-playfair), "Times New Roman", Times, serif;
+  letter-spacing: -0.01em;
 }
 
 ::selection {
@@ -90,6 +95,11 @@ h3 {
 :focus-visible {
   outline: 2px solid var(--ss-brand);
   outline-offset: 2px;
+}
+
+.bg-dot-grid {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='1' cy='1' r='1' fill='%230F172A' fill-opacity='0.04'/%3E%3C/svg%3E");
+  background-size: 24px 24px;
 }
 
 @keyframes ss-rise {
