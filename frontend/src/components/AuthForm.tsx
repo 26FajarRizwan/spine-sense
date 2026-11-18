@@ -25,12 +25,12 @@ type Notice = { tone: "error" | "success"; text: string } | null;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const inputClass =
-  "mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-[#0F172A] outline-none transition focus:border-[#005AF1] focus:ring-4 focus:ring-[#005AF1]/10";
+  "mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-[#0F172A] outline-none transition focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10";
 
 const features = [
-  { title: "Live skeleton overlay", icon: Activity, tone: "text-[#005AF1] bg-[#E8F0FF]" },
+  { title: "Live skeleton overlay", icon: Activity, tone: "text-[#2563EB] bg-[#E8F0FF]" },
   { title: "Instant posture score", icon: ShieldCheck, tone: "text-[#059669] bg-[#ECFDF5]" },
-  { title: "Audio slump alerts", icon: AudioLines, tone: "text-[#005AF1] bg-[#E8F0FF]" },
+  { title: "Audio slump alerts", icon: AudioLines, tone: "text-[#2563EB] bg-[#E8F0FF]" },
   { title: "Session analytics", icon: ChartLine, tone: "text-[#059669] bg-[#ECFDF5]" },
 ] as const;
 
@@ -257,11 +257,11 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   const busy = loadingAction !== null;
 
   return (
-    <main className="min-h-screen bg-white text-[#0F172A]">
+    <main className="min-h-screen text-[#0F172A]">
       <div className="grid min-h-screen lg:grid-cols-[minmax(0,1.05fr)_minmax(28rem,0.95fr)]">
-        <aside className="hidden bg-[#F8FAFC] px-10 py-12 lg:flex lg:flex-col lg:justify-between xl:px-20">
+        <aside className="hidden bg-white/40 px-10 py-12 lg:flex lg:flex-col lg:justify-between xl:px-20">
           <div className="max-w-xl pt-10">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#005AF1]">SpineSense</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#2563EB]">SpineSense</p>
             <h1 className="mt-8 text-5xl font-bold leading-[1.08] tracking-[-0.04em] text-[#0F172A] xl:text-6xl">
               Better posture.
               <span className="block text-[#059669]">Healthier you.</span>
@@ -280,14 +280,14 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
           </p>
         </aside>
 
-        <section className="flex min-h-screen items-center bg-white px-6 py-10 sm:px-12 lg:px-16">
+        <section className="flex min-h-screen items-center px-6 py-10 sm:px-12 lg:px-16">
           <div className="mx-auto w-full max-w-[25rem]">
             <div className="text-center">
               <Link href="/" className="inline-flex items-center gap-2" aria-label="SpineSense home">
                 <Image src="/brand-mark.png" alt="" width={36} height={64} priority className="h-10 w-auto" />
                 <span className="text-xl font-bold tracking-tight">
                   <span className="text-[#0F766E]">Spine</span>
-                  <span className="text-[#005AF1]">Sense</span>
+                  <span className="text-[#2563EB]">Sense</span>
                 </span>
               </Link>
               <h2 className="mt-8 text-2xl font-bold">{isSignup ? "Create your account" : "Welcome back"}</h2>
@@ -328,7 +328,7 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
                 <div className="flex items-center justify-between text-sm font-semibold">
                   <label htmlFor="auth-password">Password</label>
                   {!isSignup ? (
-                    <button type="button" onClick={() => void forgotPassword()} disabled={busy} className="font-medium text-slate-500 hover:text-[#005AF1]">
+                    <button type="button" onClick={() => void forgotPassword()} disabled={busy} className="font-medium text-slate-500 hover:text-[#2563EB]">
                       Forgot password?
                     </button>
                   ) : null}
@@ -349,12 +349,12 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
 
             <p className="mt-6 text-center text-sm text-slate-500">
               {isSignup ? "Already have an account" : "Do not have an account"}{" "}
-              <button type="button" onClick={() => changeMode(isSignup ? "signIn" : "signUp")} className="font-semibold text-[#005AF1] hover:underline">
+              <button type="button" onClick={() => changeMode(isSignup ? "signIn" : "signUp")} className="font-semibold text-[#2563EB] hover:underline">
                 {isSignup ? "Sign in" : "Sign up"}
               </button>
             </p>
             <p className="mt-8 text-center text-xs text-slate-400">
-              <Link href="/" className="hover:text-[#005AF1]">Back to home</Link>
+              <Link href="/" className="hover:text-[#2563EB]">Back to home</Link>
             </p>
           </div>
         </section>

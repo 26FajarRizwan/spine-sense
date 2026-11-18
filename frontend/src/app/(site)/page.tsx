@@ -97,11 +97,11 @@ const STEPS = [
 
 export default function HomePage() {
   return (
-    <div className="relative overflow-x-hidden bg-white">
-      <section className="bg-dot-grid relative bg-white">
+    <div className="relative overflow-x-hidden">
+      <section className="bg-dot-grid relative">
         <div className="container mx-auto grid items-stretch gap-8 px-6 py-7 lg:grid-cols-12 lg:gap-10 lg:py-9">
           <div className="flex flex-col lg:col-span-5 animate-rise">
-            <p className="inline-flex w-fit items-center rounded-full border border-brand/20 bg-sky-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-brand">
+            <p className="inline-flex w-fit items-center rounded-full border border-brand/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-brand">
               SpineSense
             </p>
 
@@ -249,7 +249,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="border-y border-line bg-mist">
+      <section className="border-y border-line bg-white/45">
         <div className="container mx-auto px-6 py-12 lg:py-14">
           <div className="max-w-xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-brand">
@@ -288,7 +288,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="bg-white">
+      <section className="border-t border-line">
         <div className="container mx-auto px-6 py-12 lg:py-14">
           <div className="max-w-xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-spine">
@@ -314,8 +314,8 @@ export default function HomePage() {
             ))}
           </ol>
 
-          <div className="mt-6 grid overflow-hidden rounded-2xl border border-line md:grid-cols-2">
-            <div className="border-b border-spine/25 bg-emerald-tint p-6 md:border-b-0 md:border-r">
+          <div className="mt-6 grid overflow-hidden rounded-2xl border border-spine/25 bg-white shadow-xs md:grid-cols-2">
+            <div className="border-b border-spine/25 bg-white p-6 md:border-b-0 md:border-r">
               <p className="text-sm font-semibold text-spine">Start a live session</p>
               <p className="mt-1 text-sm leading-6 text-ink-soft">
                 Open your camera and see your skeleton scored in realtime.
@@ -328,7 +328,7 @@ export default function HomePage() {
                 Start Live Session
               </Link>
             </div>
-            <div className="border-t border-brand/25 bg-sky-tint p-6 md:border-t-0">
+            <div className="border-brand/25 bg-white p-6">
               <p className="text-sm font-semibold text-brand">Review your progress</p>
               <p className="mt-1 text-sm leading-6 text-ink-soft">
                 Check weekly trends, mean alignment and slump frequency.

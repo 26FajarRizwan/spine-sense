@@ -45,7 +45,7 @@ export function Footer() {
   }
 
   return (
-    <footer className="mt-auto border-t border-slate-200 bg-white">
+    <footer className="mt-auto border-t border-slate-200 bg-white/70 backdrop-blur-sm">
       <div className="container mx-auto grid gap-10 px-6 py-12 sm:grid-cols-2 lg:grid-cols-4">
         <div className="sm:col-span-2 lg:col-span-1">
           <Link href="/" className="inline-flex items-center" aria-label="SpineSense home">

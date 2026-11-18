@@ -135,7 +135,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="bg-white">
+    <div>
       <div className="container mx-auto max-w-3xl px-6 py-8 lg:py-10">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand">Account</p>
         <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">My Profile</h1>

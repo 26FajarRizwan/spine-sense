@@ -196,7 +196,7 @@ export function DashboardWorkspace() {
   }
 
   return (
-    <div className="relative overflow-x-hidden bg-white">
+    <div className="relative overflow-x-hidden">
       <div className="relative container mx-auto px-4 py-8 sm:px-6 lg:py-9">
         <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">

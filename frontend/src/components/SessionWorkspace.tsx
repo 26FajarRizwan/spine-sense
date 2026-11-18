@@ -190,7 +190,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
   }
 
   return (
-    <div className="relative overflow-x-hidden bg-white">
+    <div className="relative overflow-x-hidden">
       <div className="relative container mx-auto px-6 py-8 lg:py-9">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">

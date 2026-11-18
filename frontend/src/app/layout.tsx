@@ -64,7 +64,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${plusJakarta.variable} ${playfair.variable} antialiased`}>
-      <body className="flex min-h-screen flex-col bg-white font-sans text-ink antialiased">
+      <body className="flex min-h-screen flex-col font-sans text-ink antialiased">
         <SessionProvider>{children}</SessionProvider>
       </body>
     </html>
