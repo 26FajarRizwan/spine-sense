@@ -202,6 +202,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
       return;
     }
     if (!user) return;
+    const userId = user.id;
 
     let cancelled = false;
     async function loadAlertSettings() {
@@ -215,7 +216,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
         const { data, error: queryError } = await supabase
           .from("user_settings")
           .select("slouch_sensitivity, grace_period_seconds, audio_alerts_enabled, audio_volume")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .maybeSingle();
         if (cancelled) return;
         if (queryError) {
