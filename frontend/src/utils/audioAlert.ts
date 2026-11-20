@@ -48,7 +48,8 @@ export function playCriticalSlumpAlert(volume = 1): void {
   if (!ctx) return;
   void ctx.resume();
 
-  const level = Math.max(0.15, Math.min(1, volume));
+  const level = Math.max(0, Math.min(1, volume));
+  if (level === 0) return;
   const peak = level * 0.55;
   const now = ctx.currentTime;
   const freqs = [880, 1046, 880] as const;
