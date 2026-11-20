@@ -1,269 +1,853 @@
 "use client";
 
+import {
+  FilesetResolver,
+  PoseLandmarker,
+  type NormalizedLandmark,
+} from "@mediapipe/tasks-vision";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Eye, EyeOff } from "lucide-react";
+import { Bell, BellOff, Camera, CameraOff, Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { CameraFeed } from "@/components/CameraFeed";
-import { PostureHUD } from "@/components/PostureHUD";
-import { playCriticalSlumpAlert, playWarningAlert } from "@/utils/audioAlert";
-import { loadSettings } from "@/lib/settings";
-import { statusFromScore } from "@/lib/posture";
-import type { PostureStatus } from "@/types/posture";
-import { useAuth } from "@/lib/useAuth";
+import {
+  analyzePosture,
+  createPostureBaseline,
+  type PostureAnalysis,
+  type PostureBaseline,
+} from "@/lib/posture/biomechanics";
+import { DEFAULT_SETTINGS, loadSettings } from "@/lib/settings";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/useAuth";
+import { useSessionConnection } from "@/components/SessionProvider";
+import { playCriticalSlumpAlert } from "@/utils/audioAlert";
 
 interface SessionWorkspaceProps {
   mode?: "demo" | "authenticated";
 }
 
+interface AlertSettings {
+  slouchAngleThreshold: number;
+  gracePeriodSeconds: number;
+  audioAlertsEnabled: boolean;
+  alertVolume: number;
+}
+
+interface PredictionResponse {
+  posture_class?: unknown;
+  inference_source?: unknown;
+}
+
+const INITIAL_ALERT_SETTINGS: AlertSettings = {
+  slouchAngleThreshold: DEFAULT_SETTINGS.slouchSensitivityDeg,
+  gracePeriodSeconds: DEFAULT_SETTINGS.gracePeriodSeconds,
+  audioAlertsEnabled: DEFAULT_SETTINGS.audioAlertsEnabled,
+  alertVolume: DEFAULT_SETTINGS.audioVolume,
+};
+
+const POSE_CONNECTIONS: Array<[number, number]> = [
+  [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8],
+  [9, 10], [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21],
+  [17, 19], [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
+  [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [27, 29], [29, 31],
+  [27, 31], [24, 26], [26, 28], [28, 30], [30, 32], [28, 32],
+];
+
+const STATUS_TONES = {
+  GOOD: { label: "GOOD", color: "#059669", background: "bg-emerald-50 text-emerald-800" },
+  WARNING: { label: "WARNING", color: "#D97706", background: "bg-amber-50 text-amber-800" },
+  SLUMP: { label: "SLUMP", color: "#DC2626", background: "bg-red-50 text-red-800" },
+} as const;
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+}
+
+function drawPose(
+  canvas: HTMLCanvasElement,
+  video: HTMLVideoElement,
+  landmarks: { x: number; y: number; visibility?: number }[],
+  color: string,
+): void {
+  const bounds = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.floor(bounds.width * ratio);
+  const height = Math.floor(bounds.height * ratio);
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  const context = canvas.getContext("2d");
+  if (!context || width === 0 || height === 0) return;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, bounds.width, bounds.height);
+
+  const scale = Math.max(bounds.width / video.videoWidth, bounds.height / video.videoHeight);
+  const offsetX = (bounds.width - video.videoWidth * scale) / 2;
+  const offsetY = (bounds.height - video.videoHeight * scale) / 2;
+  const point = (index: number) => ({
+    x: offsetX + landmarks[index]!.x * video.videoWidth * scale,
+    y: offsetY + landmarks[index]!.y * video.videoHeight * scale,
+  });
+
+  context.lineWidth = 3;
+  context.lineCap = "round";
+  context.strokeStyle = color;
+  context.fillStyle = color;
+  for (const [start, end] of POSE_CONNECTIONS) {
+    if (
+      landmarks[start]!.visibility !== undefined &&
+      landmarks[start]!.visibility! < 0.35
+    ) continue;
+    if (
+      landmarks[end]!.visibility !== undefined &&
+      landmarks[end]!.visibility! < 0.35
+    ) continue;
+    const first = point(start);
+    const second = point(end);
+    context.beginPath();
+    context.moveTo(first.x, first.y);
+    context.lineTo(second.x, second.y);
+    context.stroke();
+  }
+
+  for (const landmark of landmarks) {
+    if (landmark.visibility !== undefined && landmark.visibility < 0.35) continue;
+    const x = offsetX + landmark.x * video.videoWidth * scale;
+    const y = offsetY + landmark.y * video.videoHeight * scale;
+    context.beginPath();
+    context.arc(x, y, 4, 0, Math.PI * 2);
+    context.fill();
+  }
+}
+
 export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
   const router = useRouter();
   const { user, loading: authLoading, isAuthenticated } = useAuth();
+  const { setConnection } = useSessionConnection();
   const protectedMode = mode === "authenticated";
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const baselineRef = useRef<PostureBaseline | null>(null);
+  const calibrationFramesRef = useRef<NormalizedLandmark[][]>([]);
+  const calibrationStartedRef = useRef<number | null>(null);
+  const settingsRef = useRef(INITIAL_ALERT_SETTINGS);
+  const startedAtRef = useRef<number | null>(null);
+  const completedDurationRef = useRef<number | null>(null);
+  const slumpStartedRef = useRef<number | null>(null);
+  const alertActiveRef = useRef(false);
+  const slumpCountRef = useRef(0);
+  const scoreTotalRef = useRef(0);
+  const scoreSamplesRef = useRef(0);
+  const analysisRef = useRef<PostureAnalysis | null>(null);
+  const lastSyncRef = useRef(0);
+  const syncInFlightRef = useRef(false);
+  const backendAvailableRef = useRef(false);
   const [active, setActive] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [score, setScore] = useState(86);
-  const [scoreTotal, setScoreTotal] = useState(86);
-  const [scoreSamples, setScoreSamples] = useState(1);
-  const [slumpCount, setSlumpCount] = useState(0);
-  const [audioAlerts, setAudioAlerts] = useState(true);
-  const [audioVolume, setAudioVolume] = useState(0.7);
+  const [loadingCamera, setLoadingCamera] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(false);
+  const [analysis, setAnalysis] = useState<PostureAnalysis | null>(null);
+  const [baseline, setBaseline] = useState<PostureBaseline | null>(null);
+  const [calibrationSeconds, setCalibrationSeconds] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [slumpCount, setSlumpCount] = useState(0);
+  const [alertActive, setAlertActive] = useState(false);
+  const [alertSettings, setAlertSettings] = useState(INITIAL_ALERT_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [predictionClass, setPredictionClass] = useState("Waiting for calibration");
+  const [inferenceSource, setInferenceSource] = useState("Local biomechanics");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const lastAlertRef = useRef<PostureStatus>("GOOD");
-  const scoreRef = useRef(86);
+
+  settingsRef.current = alertSettings;
+
+  const changeActive = useCallback((next: boolean) => {
+    setActive(next);
+  }, []);
+
+  const beginCalibration = useCallback(() => {
+    baselineRef.current = null;
+    setBaseline(null);
+    calibrationFramesRef.current = [];
+    calibrationStartedRef.current = performance.now();
+    setCalibrationSeconds(5);
+    setAnalysis(null);
+    analysisRef.current = null;
+    setPredictionClass("Calibrating");
+    setInferenceSource("Local biomechanics");
+    backendAvailableRef.current = false;
+    setError(null);
+    slumpStartedRef.current = null;
+    alertActiveRef.current = false;
+    setAlertActive(false);
+  }, []);
 
   useEffect(() => {
-    if (protectedMode && !authLoading && !isAuthenticated) {
-      router.replace("/login");
-    }
+    if (protectedMode && !authLoading && !isAuthenticated) router.replace("/login");
   }, [authLoading, isAuthenticated, protectedMode, router]);
 
   useEffect(() => {
     if (!protectedMode) {
-      const timeout = window.setTimeout(() => {
-        const settings = loadSettings();
-        setAudioAlerts(settings.audioAlertsEnabled);
-        setAudioVolume(settings.audioVolume);
-      }, 0);
-      return () => window.clearTimeout(timeout);
+      const saved = loadSettings();
+      const next = {
+        slouchAngleThreshold: saved.slouchSensitivityDeg,
+        gracePeriodSeconds: saved.gracePeriodSeconds,
+        audioAlertsEnabled: saved.audioAlertsEnabled,
+        alertVolume: saved.audioVolume,
+      };
+      setAlertSettings(next);
+      return;
     }
     if (!user) return;
 
-    const userId = user.id;
     let cancelled = false;
-    async function loadAudioPreferences() {
+    async function loadAlertSettings() {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) {
-        setSettingsError("Supabase is not configured. Audio preferences could not be loaded.");
+        setSettingsError("Supabase is not configured. Default alert settings are active.");
         return;
       }
+
       try {
-        const { data, error } = await supabase
+        const { data, error: queryError } = await supabase
           .from("user_settings")
-          .select("audio_alerts_enabled, audio_volume")
-          .eq("user_id", userId)
+          .select("slouch_sensitivity, grace_period_seconds, audio_alerts_enabled, audio_volume")
+          .eq("user_id", user.id)
           .maybeSingle();
         if (cancelled) return;
-        if (error) {
-          setSettingsError(`Could not load audio preferences: ${error.message}`);
+        if (queryError) {
+          setSettingsError(`Could not load alert settings: ${queryError.message}`);
           return;
         }
-        if (data) {
-          setAudioAlerts(data.audio_alerts_enabled);
-          setAudioVolume(Number(data.audio_volume));
-        }
-      } catch (error) {
+        if (!data) return;
+        setAlertSettings({
+          slouchAngleThreshold: Number(data.slouch_sensitivity),
+          gracePeriodSeconds: Number(data.grace_period_seconds),
+          audioAlertsEnabled: data.audio_alerts_enabled,
+          alertVolume: Number(data.audio_volume),
+        });
+      } catch (loadError) {
         if (!cancelled) {
           setSettingsError(
-            `Could not load audio preferences: ${
-              error instanceof Error ? error.message : "unexpected error"
+            `Could not load alert settings: ${
+              loadError instanceof Error ? loadError.message : "unexpected error"
             }`,
           );
         }
       }
     }
 
-    void loadAudioPreferences();
+    void loadAlertSettings();
     return () => {
       cancelled = true;
     };
   }, [protectedMode, user]);
 
-  const onActiveChange = useCallback((next: boolean) => {
-    if (next) {
-      setElapsedSeconds(0);
-      setScore(86);
-      scoreRef.current = 86;
-      setScoreTotal(86);
-      setScoreSamples(1);
-      setSlumpCount(0);
-      setSaveError(null);
-      setSaved(false);
-      lastAlertRef.current = "GOOD";
+  useEffect(() => {
+    if (protectedMode && (authLoading || !isAuthenticated)) return;
+    if (!active) {
+      setConnection("standby");
+      return;
     }
-    setActive(next);
-  }, []);
+
+    let cancelled = false;
+    let stream: MediaStream | null = null;
+    let landmarker: PoseLandmarker | null = null;
+    let frameId = 0;
+    let lastDetectionAt = 0;
+    let lastUiUpdateAt = 0;
+    const predictUrl = `${
+      process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+    }/api/v1/predict`;
+
+    async function startTracking() {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas) return;
+
+      try {
+        setLoadingCamera(true);
+        setError(null);
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 1280, height: 720, facingMode: "user" },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        video.srcObject = stream;
+        await video.play();
+
+        const fileset = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
+        );
+        const modelOptions = {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+          },
+          runningMode: "VIDEO" as const,
+          numPoses: 1,
+        };
+        try {
+          landmarker = await PoseLandmarker.createFromOptions(fileset, {
+            ...modelOptions,
+            baseOptions: { ...modelOptions.baseOptions, delegate: "GPU" },
+          });
+        } catch {
+          landmarker = await PoseLandmarker.createFromOptions(fileset, {
+            ...modelOptions,
+            baseOptions: { ...modelOptions.baseOptions, delegate: "CPU" },
+          });
+        }
+        if (cancelled) {
+          landmarker.close();
+          return;
+        }
+
+        setLoadingCamera(false);
+        setConnection("live");
+        beginCalibration();
+
+        const trackFrame = (timestamp: number) => {
+          if (cancelled || !landmarker || !video || !canvas) return;
+          if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && timestamp - lastDetectionAt >= 30) {
+            lastDetectionAt = timestamp;
+            try {
+              const result = landmarker.detectForVideo(video, timestamp);
+              const landmarks = result.landmarks[0];
+              const calibrationStarted = calibrationStartedRef.current;
+              if (calibrationStarted !== null) {
+                if (landmarks?.length === 33) calibrationFramesRef.current.push(landmarks);
+                const remaining = Math.max(
+                  0,
+                  5 - Math.floor((timestamp - calibrationStarted) / 1000),
+                );
+                setCalibrationSeconds(remaining);
+                if (timestamp - calibrationStarted >= 5000) {
+                  const nextBaseline = createPostureBaseline(calibrationFramesRef.current);
+                  calibrationStartedRef.current = null;
+                  if (nextBaseline) {
+                    baselineRef.current = nextBaseline;
+                    setBaseline(nextBaseline);
+                    setCalibrationSeconds(0);
+                    setPredictionClass("Optimal Upright");
+                    setError(null);
+                  } else {
+                    setCalibrationSeconds(0);
+                    setError("Calibration could not detect your upper body. Reposition and recalibrate.");
+                  }
+                }
+              }
+
+              if (landmarks) {
+                drawPose(
+                  canvas,
+                  video,
+                  landmarks,
+                  STATUS_TONES[analysisRef.current?.status ?? "GOOD"].color,
+                );
+
+                const currentBaseline = baselineRef.current;
+                if (currentBaseline) {
+                  const nextAnalysis = analyzePosture(landmarks, currentBaseline);
+                  if (nextAnalysis) {
+                    const previous = analysisRef.current;
+                    const smoothedScore = previous
+                      ? Math.round(previous.score * 0.75 + nextAnalysis.score * 0.25)
+                      : nextAnalysis.score;
+                    const displayAnalysis: PostureAnalysis = {
+                      ...nextAnalysis,
+                      score: smoothedScore,
+                      neckAlignment: previous
+                        ? Math.round(previous.neckAlignment * 0.75 + nextAnalysis.neckAlignment * 0.25)
+                        : nextAnalysis.neckAlignment,
+                      shoulderBalance: previous
+                        ? Math.round(previous.shoulderBalance * 0.75 + nextAnalysis.shoulderBalance * 0.25)
+                        : nextAnalysis.shoulderBalance,
+                      spineUpright: previous
+                        ? Math.round(previous.spineUpright * 0.75 + nextAnalysis.spineUpright * 0.25)
+                        : nextAnalysis.spineUpright,
+                      status:
+                        smoothedScore >= 80
+                          ? "GOOD"
+                          : smoothedScore >= 60
+                            ? "WARNING"
+                            : "SLUMP",
+                    };
+                    analysisRef.current = displayAnalysis;
+                    scoreTotalRef.current += displayAnalysis.score;
+                    scoreSamplesRef.current += 1;
+
+                    const settings = settingsRef.current;
+                    const belowThreshold =
+                      nextAnalysis.forwardHeadDelta >= settings.slouchAngleThreshold ||
+                      nextAnalysis.score < 60;
+                    if (belowThreshold) {
+                      if (slumpStartedRef.current === null) slumpStartedRef.current = timestamp;
+                      if (
+                        !alertActiveRef.current &&
+                        timestamp - slumpStartedRef.current >= settings.gracePeriodSeconds * 1000
+                      ) {
+                        alertActiveRef.current = true;
+                        setAlertActive(true);
+                        slumpCountRef.current += 1;
+                        setSlumpCount(slumpCountRef.current);
+                        if (settings.audioAlertsEnabled) {
+                          playCriticalSlumpAlert(settings.alertVolume);
+                        }
+                      }
+                    } else {
+                      slumpStartedRef.current = null;
+                      alertActiveRef.current = false;
+                      setAlertActive(false);
+                    }
+
+                    if (timestamp - lastUiUpdateAt >= 100) {
+                      lastUiUpdateAt = timestamp;
+                      setAnalysis(displayAnalysis);
+                      if (!backendAvailableRef.current) {
+                        setPredictionClass(nextAnalysis.postureClass);
+                        setInferenceSource("Local biomechanics");
+                      }
+                    }
+
+                    if (
+                      timestamp - lastSyncRef.current >= 500 &&
+                      !syncInFlightRef.current
+                    ) {
+                      lastSyncRef.current = timestamp;
+                      syncInFlightRef.current = true;
+                      void fetch(predictUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          landmarks: landmarks.slice(0, 33).map((landmark) => ({
+                            x: landmark.x,
+                            y: landmark.y,
+                            z: landmark.z,
+                            visibility: landmark.visibility ?? 1,
+                          })),
+                          baseline: {
+                            neck_angle: currentBaseline.neckAngle,
+                            shoulder_tilt: currentBaseline.shoulderTilt,
+                            torso_compression: currentBaseline.torsoCompression,
+                            depth_delta: currentBaseline.depthDelta,
+                          },
+                          slouch_threshold: settings.slouchAngleThreshold,
+                        }),
+                      })
+                        .then(async (response) => {
+                          if (!response.ok) throw new Error(`Prediction request failed with status ${response.status}`);
+                          return (await response.json()) as PredictionResponse;
+                        })
+                        .then((prediction) => {
+                          if (cancelled) return;
+                          backendAvailableRef.current = true;
+                          if (typeof prediction.posture_class === "string") {
+                            setPredictionClass(prediction.posture_class);
+                          }
+                          setInferenceSource(
+                            typeof prediction.inference_source === "string"
+                              ? prediction.inference_source
+                              : "FastAPI",
+                          );
+                        })
+                        .catch(() => {
+                          if (!cancelled) {
+                            backendAvailableRef.current = false;
+                            setPredictionClass(nextAnalysis.postureClass);
+                            setInferenceSource("Local biomechanics");
+                          }
+                        })
+                        .finally(() => {
+                          syncInFlightRef.current = false;
+                        });
+                    }
+                  } else {
+                    slumpStartedRef.current = null;
+                    alertActiveRef.current = false;
+                    setAlertActive(false);
+                  }
+                }
+              } else {
+                const context = canvas.getContext("2d");
+                context?.clearRect(0, 0, canvas.width, canvas.height);
+                slumpStartedRef.current = null;
+                alertActiveRef.current = false;
+                setAlertActive(false);
+              }
+            } catch (trackingError) {
+              if (!cancelled) {
+                setError(
+                  `Pose tracking stopped: ${
+                    trackingError instanceof Error ? trackingError.message : "unexpected error"
+                  }`,
+                );
+                changeActive(false);
+              }
+            }
+          }
+          frameId = window.requestAnimationFrame(trackFrame);
+        };
+
+        frameId = window.requestAnimationFrame(trackFrame);
+      } catch (cameraError) {
+        if (cancelled) return;
+        setLoadingCamera(false);
+        setError(
+          `Could not start camera tracking: ${
+            cameraError instanceof Error ? cameraError.message : "unexpected error"
+          }`,
+        );
+        setConnection("offline");
+        changeActive(false);
+      }
+    }
+
+    void startTracking();
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frameId);
+      landmarker?.close();
+      stream?.getTracks().forEach((track) => track.stop());
+      if (videoRef.current) videoRef.current.srcObject = null;
+      setLoadingCamera(false);
+      setConnection("standby");
+      calibrationStartedRef.current = null;
+    };
+  }, [active, authLoading, beginCalibration, changeActive, isAuthenticated, protectedMode, setConnection]);
 
   useEffect(() => {
     if (!active) return;
-
-    const id = window.setInterval(() => {
-      setElapsedSeconds((value) => value + 1);
-      const previous = scoreRef.current;
-      const drift = Math.random() * 6 - 2.4;
-      const next = Math.round(Math.min(98, Math.max(38, previous + drift)));
-      scoreRef.current = next;
-      setScore(next);
-      setScoreTotal((total) => total + next);
-      setScoreSamples((samples) => samples + 1);
-      if (
-        statusFromScore(previous) !== "SLUMPING" &&
-        statusFromScore(next) === "SLUMPING"
-      ) {
-        setSlumpCount((count) => count + 1);
+    const interval = window.setInterval(() => {
+      if (startedAtRef.current !== null) {
+        setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
       }
-    }, 1000);
-
-    return () => window.clearInterval(id);
+    }, 250);
+    return () => window.clearInterval(interval);
   }, [active]);
 
-  const status = statusFromScore(score);
-  const neckAlignment = Math.max(54, Math.min(98, Math.round(score + 3)));
-  const shoulderBalance = Math.max(58, Math.min(99, Math.round(score + 6)));
-  const torsoUprightAngle = Math.max(55, Math.min(97, Math.round(score)));
+  function startSession() {
+    startedAtRef.current = Date.now();
+    completedDurationRef.current = null;
+    baselineRef.current = null;
+    analysisRef.current = null;
+    slumpStartedRef.current = null;
+    alertActiveRef.current = false;
+    setBaseline(null);
+    setAnalysis(null);
+    setAlertActive(false);
+    scoreTotalRef.current = 0;
+    scoreSamplesRef.current = 0;
+    slumpCountRef.current = 0;
+    setElapsedSeconds(0);
+    setSlumpCount(0);
+    setSaved(false);
+    setSaveError(null);
+    lastSyncRef.current = 0;
+    backendAvailableRef.current = false;
+    setPredictionClass("Preparing camera");
+    setInferenceSource("Local biomechanics");
+    setActive(true);
+  }
 
-  async function handleEndAndSave() {
-    if (!user || elapsedSeconds === 0) return;
+  async function endAndSave() {
+    if (!user || (startedAtRef.current === null && completedDurationRef.current === null)) return;
+    const duration =
+      completedDurationRef.current ??
+      Math.max(0, Math.floor((Date.now() - (startedAtRef.current ?? Date.now())) / 1000));
+    setActive(false);
+    setElapsedSeconds(duration);
+    startedAtRef.current = null;
+    completedDurationRef.current = duration;
     setSaving(true);
     setSaveError(null);
 
     try {
-      setActive(false);
       const supabase = getSupabaseBrowserClient();
-      if (!supabase) {
-        throw new Error("Supabase is not configured. Session data was not saved.");
-      }
-
-      const { error } = await supabase.from("posture_sessions").insert({
+      if (!supabase) throw new Error("Supabase is not configured. Session data was not saved.");
+      const averageScore =
+        scoreSamplesRef.current > 0
+          ? scoreTotalRef.current / scoreSamplesRef.current
+          : 0;
+      const { error: insertError } = await supabase.from("posture_sessions").insert({
         user_id: user.id,
-        duration_seconds: elapsedSeconds,
-        average_score: scoreTotal / scoreSamples,
-        slump_count: slumpCount,
+        duration_seconds: duration,
+        average_score: averageScore,
+        slump_count: slumpCountRef.current,
       });
-      if (error) throw new Error(`Could not save session: ${error.message}`);
-
+      if (insertError) throw new Error(`Could not save session: ${insertError.message}`);
       setSaved(true);
-    } catch (error) {
+      completedDurationRef.current = null;
+    } catch (saveFailure) {
       setSaveError(
-        error instanceof Error ? error.message : "Could not save this session.",
+        saveFailure instanceof Error ? saveFailure.message : "Could not save this session.",
       );
     } finally {
       setSaving(false);
     }
   }
 
-  useEffect(() => {
-    if (!active || !audioAlerts) {
-      lastAlertRef.current = status;
-      return;
-    }
-
-    if (status === lastAlertRef.current) return;
-    lastAlertRef.current = status;
-
-    if (status === "WARNING") playWarningAlert(audioVolume);
-    if (status === "SLUMPING") playCriticalSlumpAlert(audioVolume);
-  }, [active, audioAlerts, audioVolume, status]);
-
   if (protectedMode && (authLoading || !isAuthenticated)) {
     return (
       <div className="container mx-auto max-w-xl px-6 py-20 text-center">
-        <p className="text-sm font-medium text-ink-soft">
-          {authLoading ? "Checking your session…" : "Redirecting to sign in…"}
+        <p className="text-sm font-medium text-slate-600">
+          {authLoading ? "Checking your session" : "Redirecting to sign in"}
         </p>
       </div>
     );
   }
 
+  const currentStatus = analysis?.status ?? "GOOD";
+  const tone = analysis
+    ? STATUS_TONES[currentStatus]
+    : { label: "READY", color: "#64748B", background: "bg-slate-100 text-slate-600" };
+  const metricValues = [
+    ["Neck Alignment", analysis?.neckAlignment ?? 0],
+    ["Shoulder Balance", analysis?.shoulderBalance ?? 0],
+    ["Spine Upright", analysis?.spineUpright ?? 0],
+  ] as const;
+
   return (
-    <div className="relative overflow-x-hidden">
-      <div className="relative container mx-auto px-6 py-8 lg:py-9">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-spine">
-              {protectedMode ? "Live workspace" : "Demo mode · Guest"}
-            </p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-              {protectedMode ? "Live session" : "Live demo session"}
-            </h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-ink-soft">
-              {protectedMode
-                ? "Track live posture, hear critical slump alerts and save your session summary to your account."
-                : "Enable the camera to test skeleton overlay, live score and optional audio alerts. No account required."}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setAudioAlerts((value) => !value)} aria-pressed={audioAlerts} className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${audioAlerts ? "border-spine bg-spine text-white hover:bg-spine-hover" : "border-line bg-white text-ink-soft hover:border-brand/30 hover:text-brand"}`}>
-              {audioAlerts ? <Bell className="h-4 w-4" aria-hidden="true" /> : <BellOff className="h-4 w-4" aria-hidden="true" />}
-              Audio {audioAlerts ? "on" : "off"}
-            </button>
-            <button type="button" onClick={() => setPrivacyMode((value) => !value)} aria-pressed={privacyMode} className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-colors ${privacyMode ? "border-ink bg-ink text-white" : "border-line bg-white text-ink-soft hover:border-brand/30 hover:text-brand"}`}>
-              {privacyMode ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-              Privacy Mode (Skeleton Only)
-            </button>
-          </div>
+    <div className="container mx-auto max-w-7xl px-5 py-8 sm:px-6 lg:py-10">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">
+            {protectedMode ? "Live workspace" : "Guest demo"}
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            Live posture session
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            Realtime posture scoring runs in your browser. Your webcam feed is not uploaded.
+          </p>
         </div>
-
-        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
-          <CameraFeed
-            active={active}
-            privacyMode={privacyMode}
-            postureStatus={status}
-            onActiveChange={onActiveChange}
-          />
-          <div className="lg:sticky lg:top-24">
-            <PostureHUD
-              score={score}
-              status={status}
-              elapsedSeconds={elapsedSeconds}
-              running={active}
-              audioAlerts={audioAlerts}
-              neckAlignment={neckAlignment}
-              shoulderBalance={shoulderBalance}
-              torsoUprightAngle={torsoUprightAngle}
-            />
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setAlertSettings((settings) => ({
+                ...settings,
+                audioAlertsEnabled: !settings.audioAlertsEnabled,
+              }))
+            }
+            aria-pressed={alertSettings.audioAlertsEnabled}
+            className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold ${
+              alertSettings.audioAlertsEnabled
+                ? "border-brand bg-brand text-white"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            {alertSettings.audioAlertsEnabled ? (
+              <Bell className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <BellOff className="h-4 w-4" aria-hidden="true" />
+            )}
+            Audio {alertSettings.audioAlertsEnabled ? "on" : "off"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPrivacyMode((value) => !value)}
+            aria-pressed={privacyMode}
+            className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold ${
+              privacyMode
+                ? "border-slate-800 bg-slate-800 text-white"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            {privacyMode ? (
+              <EyeOff className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Eye className="h-4 w-4" aria-hidden="true" />
+            )}
+            Skeleton Only Mode
+          </button>
         </div>
-
-        {protectedMode ? (
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-h-5 text-sm">
-              {settingsError ? (
-                <p role="alert" className="text-amber-800">{settingsError}</p>
-              ) : saveError ? (
-                <p role="alert" className="text-red-700">{saveError}</p>
-              ) : saved ? (
-                <p role="status" className="font-medium text-spine-deep">
-                  Session summary saved to your dashboard.
-                </p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleEndAndSave()}
-              disabled={saving || elapsedSeconds === 0}
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-brand px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? "Saving session…" : "End Session & Save"}
-            </button>
-          </div>
-        ) : null}
       </div>
+
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-5">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Camera tracking</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {baseline ? "Baseline calibrated" : "A 5 second neutral baseline is required"}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {active ? (
+                <button
+                  type="button"
+                  onClick={beginCalibration}
+                  className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:border-brand hover:text-brand"
+                >
+                  Recalibrate
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={active ? () => changeActive(false) : startSession}
+                disabled={loadingCamera}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
+              >
+                {active ? (
+                  <CameraOff className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Camera className="h-4 w-4" aria-hidden="true" />
+                )}
+                {loadingCamera ? "Starting camera" : active ? "Stop camera" : "Start Camera"}
+              </button>
+            </div>
+          </div>
+
+          <div className={`relative aspect-video min-h-72 overflow-hidden ${privacyMode ? "bg-slate-900" : "bg-slate-100"}`}>
+            <video
+              ref={videoRef}
+              className={`h-full w-full -scale-x-100 object-cover ${
+                active && !privacyMode ? "opacity-100" : "opacity-0"
+              }`}
+              playsInline
+              muted
+              autoPlay
+            />
+            <canvas
+              ref={canvasRef}
+              className={`pointer-events-none absolute inset-0 h-full w-full -scale-x-100 ${
+                active ? "opacity-100" : "opacity-0"
+              }`}
+              aria-hidden="true"
+            />
+            {active ? (
+              <div className="absolute left-1/2 top-4 flex -translate-x-1/2 flex-col items-center gap-2">
+                {calibrationSeconds > 0 ? (
+                  <p className="rounded-full bg-slate-900/80 px-4 py-2 text-center text-sm font-medium text-white">
+                    Hold upright posture for calibration: {calibrationSeconds} seconds
+                  </p>
+                ) : null}
+                {alertActive ? (
+                  <p className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white">
+                    Slump alert active
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                <CameraOff className="h-9 w-9 text-slate-400" aria-hidden="true" />
+                <p className="text-sm text-slate-600">
+                  Allow camera access to begin realtime tracking.
+                </p>
+              </div>
+            )}
+            {error ? (
+              <p role="alert" className="absolute bottom-4 left-4 right-4 rounded-xl bg-white px-4 py-3 text-sm text-red-700 shadow">
+                {error}
+              </p>
+            ) : null}
+          </div>
+        </section>
+
+        <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Posture score</h2>
+              <p className="mt-1 text-xs text-slate-500">Score from 0 to 100</p>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${tone.background}`}>
+              {tone.label}
+            </span>
+          </div>
+          <div className="mt-7 flex items-end justify-center gap-2">
+            <span className="text-6xl font-semibold tabular-nums text-slate-900">
+              {analysis?.score ?? 0}
+            </span>
+            <span className="mb-2 text-sm text-slate-500">out of 100</span>
+          </div>
+          <p className="mt-3 text-center text-sm font-medium text-slate-700">
+            {analysis?.cue ?? "Calibrate to begin your posture analysis"}
+          </p>
+
+          <div className="mt-7 space-y-4">
+            {metricValues.map(([label, value]) => (
+              <div key={label}>
+                <div className="mb-1.5 flex justify-between text-xs font-medium text-slate-600">
+                  <span>{label}</span>
+                  <span>{value}%</span>
+                </div>
+                <div
+                  className="h-2 overflow-hidden rounded-full bg-slate-100"
+                  role="progressbar"
+                  aria-label={label}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={value}
+                >
+                  <div
+                    className="h-full rounded-full transition-[width] duration-200"
+                    style={{ width: `${value}%`, backgroundColor: tone.color }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 rounded-xl bg-slate-50 px-4 py-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">Session time</span>
+              <time className="font-mono text-lg font-semibold tabular-nums text-slate-900">
+                {formatDuration(elapsedSeconds)}
+              </time>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+              <span className="text-slate-500">Slump count</span>
+              <span className="font-semibold text-slate-700">{slumpCount}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 px-4 py-3">
+            <p className="text-xs font-medium text-slate-500">Posture classification</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{predictionClass}</p>
+            <p className="mt-1 text-xs text-slate-500">Inference source: {inferenceSource}</p>
+          </div>
+        </aside>
+      </div>
+
+      {protectedMode ? (
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-h-5 text-sm">
+            {settingsError ? (
+              <p role="alert" className="text-amber-800">{settingsError}</p>
+            ) : saveError ? (
+              <p role="alert" className="text-red-700">{saveError}</p>
+            ) : saved ? (
+              <p role="status" className="font-medium text-emerald-700">
+                Session summary saved to your dashboard.
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => void endAndSave()}
+            disabled={
+              saving ||
+              !baseline ||
+              scoreSamplesRef.current === 0 ||
+              elapsedSeconds === 0 ||
+              (!active &&
+                !saveError &&
+                completedDurationRef.current === null &&
+                startedAtRef.current === null)
+            }
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-brand px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Saving session" : "End Session & Save"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
