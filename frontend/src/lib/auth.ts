@@ -184,3 +184,26 @@ export async function signInWithOAuthProvider(
 
   window.location.assign(data.url);
 }
+
+export async function persistUserMetadata(
+  data: Record<string, unknown>,
+): Promise<void> {
+  const supabase = requireClient();
+  const { error } = await supabase.auth.updateUser({ data });
+  if (error) throw new Error(error.message);
+  const { error: refreshError } = await supabase.auth.refreshSession();
+  if (refreshError) throw new Error(refreshError.message);
+}
+
+export async function syncProfileRow(
+  userId: string,
+  fullName: string,
+): Promise<void> {
+  try {
+    await requireClient()
+      .from("profiles")
+      .upsert({ id: userId, full_name: fullName }, { onConflict: "id" });
+  } catch {
+    return;
+  }
+}

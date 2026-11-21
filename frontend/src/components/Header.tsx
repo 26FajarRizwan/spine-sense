@@ -318,7 +318,7 @@ export function Header() {
                   >
                     <div className="border-b border-line px-3 py-2">
                       <p className="truncate text-sm font-semibold text-ink">
-                        {user.fullName || "Account"}
+                        {user.displayName}
                       </p>
                       {user.email ? (
                         <p className="truncate text-xs text-ink-soft">{user.email}</p>

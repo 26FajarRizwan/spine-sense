@@ -11,6 +11,7 @@ import {
   saveSettings,
   settingsFromMetadata,
 } from "@/lib/settings";
+import { persistUserMetadata, syncProfileRow } from "@/lib/auth";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/useAuth";
 
@@ -83,15 +84,15 @@ export default function ProfilePage() {
     setSaving("profile");
     try {
       const goalSettings = resolveSettings({ dailyGoalMinutes: Number(dailyGoal) });
-      const { error } = await supabase.auth.updateUser({
-        data: {
-          full_name: fullName.trim(),
-          daily_sitting_target: hours,
-          primary_desk_setup: deskSetup,
-          daily_goal_minutes: goalSettings.dailyGoalMinutes,
-        },
+      const name = fullName.trim();
+      await persistUserMetadata({
+        full_name: name,
+        display_name: name,
+        daily_sitting_target: hours,
+        primary_desk_setup: deskSetup,
+        daily_goal_minutes: goalSettings.dailyGoalMinutes,
       });
-      if (error) throw error;
+      if (user) await syncProfileRow(user.id, name);
       saveSettings({ ...loadSettings(), dailyGoalMinutes: goalSettings.dailyGoalMinutes });
       setNotice({ tone: "success", text: "Profile details saved successfully" });
     } catch (error) {
@@ -162,7 +163,7 @@ export default function ProfilePage() {
             {user?.initials ?? "U"}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-lg font-semibold text-ink">{user?.fullName || "SpineSense user"}</p>
+            <p className="truncate text-lg font-semibold text-ink">{user?.displayName || "SpineSense user"}</p>
             <p className="truncate text-sm text-ink-soft">{user?.email || "Email not available"}</p>
           </div>
         </div>

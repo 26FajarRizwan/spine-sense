@@ -21,6 +21,7 @@ import {
   type ReportFrequency,
   type UserSettings,
 } from "@/lib/settings";
+import { persistUserMetadata } from "@/lib/auth";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/useAuth";
 
@@ -113,10 +114,7 @@ export function SettingsForm() {
     }
 
     try {
-      const { error: metadataError } = await supabase.auth.updateUser({
-        data: settingsToMetadata(settings),
-      });
-      if (metadataError) throw metadataError;
+      await persistUserMetadata(settingsToMetadata(settings));
       const { error: saveError } = await supabase.from("user_settings").upsert(
         {
           user_id: user.id,
