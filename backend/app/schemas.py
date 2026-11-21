@@ -33,6 +33,20 @@ class PosturePredictResponse(BaseModel):
     inference_source: str
 
 
+class BatchAnalyzeRequest(BaseModel):
+    frames: list[PosturePredictRequest] = Field(min_length=1, max_length=500)
+
+
+class BatchAnalyzeResponse(BaseModel):
+    total_frames: int
+    average_score: float
+    min_score: int
+    max_score: int
+    dominant_posture: str
+    slump_frames: int
+    class_distribution: dict[str, int]
+
+
 class ClassMetric(BaseModel):
     posture_class: str
     precision: float

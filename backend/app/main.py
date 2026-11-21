@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.model_evaluator import ModelEvaluator
 from app.posture_engine import PostureInferenceEngine
 from app.schemas import (
+    BatchAnalyzeRequest,
+    BatchAnalyzeResponse,
     ModelMetricsResponse,
     PosturePredictRequest,
     PosturePredictResponse,
@@ -44,6 +46,11 @@ def health() -> dict[str, object]:
 @app.get("/api/v1/model-metrics", response_model=ModelMetricsResponse)
 def model_metrics() -> ModelMetricsResponse:
     return evaluator.report()
+
+
+@app.post("/api/v1/analyze-session", response_model=BatchAnalyzeResponse)
+def analyze_session(payload: BatchAnalyzeRequest) -> BatchAnalyzeResponse:
+    return engine.analyze_batch(payload.frames)
 
 
 @app.post("/api/v1/predict", response_model=PosturePredictResponse)
