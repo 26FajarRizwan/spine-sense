@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Clock3 } from "lucide-react";
 import { AnalyticsCards } from "@/components/AnalyticsCards";
+import { ErgonomicInsights } from "@/components/ErgonomicInsights";
 import { PostureCharts } from "@/components/PostureCharts";
 import { formatSessionLength } from "@/lib/posture";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
@@ -242,6 +243,10 @@ export function DashboardWorkspace() {
           >
             <DashboardTrends sessions={sessions} />
           </Suspense>
+        </div>
+
+        <div className="mt-5">
+          <ErgonomicInsights sessions={sessions} averageScore={summary.averageScore} />
         </div>
 
         <section className="mt-5 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_12px_32px_-24px_rgba(15,23,42,0.35)]">
