@@ -12,6 +12,11 @@ import {
 import { playCriticalSlumpAlert, playTestCriticalAlert } from "@/utils/audioAlert";
 import {
   DEFAULT_SETTINGS,
+  SETTINGS_COLUMNS,
+  resolveSettings,
+  saveSettings,
+  settingsFromRow,
+  settingsToMetadata,
   type GracePeriodSeconds,
   type ReportFrequency,
   type UserSettings,
@@ -51,29 +56,20 @@ export function SettingsForm() {
       try {
         const { data, error: queryError } = await supabase
           .from("user_settings")
-          .select(
-            "email_reports_enabled, report_frequency, slouch_sensitivity, grace_period_seconds, audio_alerts_enabled, audio_volume",
-          )
+          .select(SETTINGS_COLUMNS)
           .eq("user_id", user.id)
           .maybeSingle();
 
         if (cancelled) return;
+        const loadedSettings = resolveSettings(
+          queryError ? {} : settingsFromRow(data),
+          user.settings,
+        );
+        setSettings(loadedSettings);
+        setSavedSettings(loadedSettings);
+        saveSettings(loadedSettings);
         if (queryError) {
           setError(`Could not load preferences: ${queryError.message}`);
-        } else if (data) {
-          const loadedSettings: UserSettings = {
-            emailReportsEnabled: data.email_reports_enabled,
-            reportFrequency: data.report_frequency === "monthly" ? "monthly" : "weekly",
-            slouchSensitivityDeg: Number(data.slouch_sensitivity),
-            gracePeriodSeconds:
-              data.grace_period_seconds === 5 || data.grace_period_seconds === 10
-                ? data.grace_period_seconds
-                : 3,
-            audioAlertsEnabled: data.audio_alerts_enabled,
-            audioVolume: Number(data.audio_volume),
-          };
-          setSettings(loadedSettings);
-          setSavedSettings(loadedSettings);
         }
       } catch (queryError) {
         if (!cancelled) {
@@ -117,6 +113,10 @@ export function SettingsForm() {
     }
 
     try {
+      const { error: metadataError } = await supabase.auth.updateUser({
+        data: settingsToMetadata(settings),
+      });
+      if (metadataError) throw metadataError;
       const { error: saveError } = await supabase.from("user_settings").upsert(
         {
           user_id: user.id,
@@ -133,6 +133,7 @@ export function SettingsForm() {
         setError(`Could not save preferences: ${saveError.message}`);
       } else {
         setSavedSettings(settings);
+        saveSettings(settings);
         setSavedFlash(true);
       }
     } catch (saveError) {
@@ -311,6 +312,14 @@ export function SettingsForm() {
             description="Play a short tone after the grace period when slumping is detected."
             checked={settings.audioAlertsEnabled}
             onChange={(checked) => patch("audioAlertsEnabled", checked)}
+          />
+
+          <ToggleRow
+            id="desktop-alerts"
+            label="Desktop pop up alerts"
+            description="Show a desktop notification when posture slips while you are on another tab."
+            checked={settings.desktopAlertsEnabled}
+            onChange={(checked) => patch("desktopAlertsEnabled", checked)}
           />
 
           <div className="max-w-lg">

@@ -188,6 +188,17 @@ export function createPostureBaseline(
   };
 }
 
+const NATURAL_ANGLE_ZONE = 6;
+const NATURAL_DEPTH_ZONE = 0.04;
+const NATURAL_TILT_ZONE = 4;
+const DEPTH_MULTIPLIER = 90;
+const CHIN_LIFT_MULTIPLIER = 65;
+
+function deadZone(value: number, zone: number): number {
+  const magnitude = Math.max(0, Math.abs(value) - zone);
+  return value < 0 ? -magnitude : magnitude;
+}
+
 function clamp(value: number, low = 0, high = 100): number {
   return Math.min(high, Math.max(low, value));
 }
@@ -201,7 +212,7 @@ export function analyzePosture(
   if (!current) return null;
 
   const reference = baseline ?? DEFAULT_BASELINE;
-  const penaltyPerDegree = 66 / slouchThreshold;
+  const penaltyPerDegree = 66 / Math.max(slouchThreshold - NATURAL_TILT_ZONE, 1);
   const forwardHeadDelta = current.neckAngle - reference.neckAngle;
   const tiltDelta = current.shoulderTilt - reference.shoulderTilt;
   const compression =
@@ -218,41 +229,48 @@ export function analyzePosture(
     ? current.torsoAngle - reference.torsoAngle
     : 0;
 
+  const neckShift = deadZone(forwardHeadDelta, NATURAL_ANGLE_ZONE);
+  const tiltShift = deadZone(tiltDelta, NATURAL_TILT_ZONE);
+  const compressionShift = deadZone(compression, NATURAL_DEPTH_ZONE);
+  const squashShift = deadZone(torsoSquash, NATURAL_DEPTH_ZONE);
+  const depthShift = deadZone(depthDelta, NATURAL_DEPTH_ZONE);
+  const torsoShift = deadZone(torsoAngleDelta, NATURAL_ANGLE_ZONE);
   const noseShift = baseline
-    ? (current.noseToShoulderY - reference.noseToShoulderY) /
+    ? deadZone(current.noseToShoulderY - reference.noseToShoulderY, NATURAL_DEPTH_ZONE) /
       Math.max(Math.abs(reference.noseToShoulderY), 0.05)
     : 0;
   const chinLift = baseline
-    ? (reference.noseEarGap - current.noseEarGap) * 120
+    ? deadZone(reference.noseEarGap - current.noseEarGap, NATURAL_DEPTH_ZONE) *
+      CHIN_LIFT_MULTIPLIER
     : 0;
   const reclineAmount = Math.max(
     0,
-    depthDelta * 200,
+    depthShift * DEPTH_MULTIPLIER,
     chinLift,
-    -forwardHeadDelta,
-    noseShift * 100 - 4,
-    -compression * 100 - 4,
+    -neckShift,
+    noseShift * 100,
+    -compressionShift * 100,
   );
   const neckDeviation = Math.max(
-    Math.abs(forwardHeadDelta),
+    Math.abs(neckShift),
     chinLift,
-    Math.abs(noseShift) * 100 - 4,
+    Math.abs(noseShift) * 100,
   );
   const spineDeviation = Math.max(
-    Math.abs(torsoAngleDelta),
-    Math.abs(depthDelta) * 200,
+    Math.abs(torsoShift),
+    Math.abs(depthShift) * DEPTH_MULTIPLIER,
     reclineAmount,
   );
 
   const neckAlignment = clamp(
-    100 - neckDeviation * penaltyPerDegree - Math.abs(compression) * 35,
+    100 - neckDeviation * penaltyPerDegree - Math.abs(compressionShift) * 35,
   );
-  const shoulderBalance = clamp(100 - Math.abs(tiltDelta) * penaltyPerDegree);
+  const shoulderBalance = clamp(100 - Math.abs(tiltShift) * penaltyPerDegree);
   const spineUpright = clamp(
     100 -
       spineDeviation * penaltyPerDegree -
-      Math.abs(compression) * 100 -
-      Math.max(0, torsoSquash) * 35,
+      Math.abs(compressionShift) * 100 -
+      Math.max(0, squashShift) * 35,
   );
   const minSubScore = Math.min(neckAlignment, shoulderBalance, spineUpright);
   const weightedScore =
@@ -267,7 +285,7 @@ export function analyzePosture(
   if (
     status !== "GOOD" &&
     reclineAmount >= tiltLimit &&
-    reclineAmount >= Math.abs(forwardHeadDelta)
+    reclineAmount >= Math.abs(neckShift)
   ) {
     postureClass = "Reclined Slouch";
     cue = "Sit upright away from backrest";
@@ -279,7 +297,7 @@ export function analyzePosture(
       postureClass = "Forward Head";
       cue = "Lift chin slightly";
     } else if (shoulderBalance <= spineUpright) {
-      postureClass = Math.abs(tiltDelta) > tiltLimit ? "Lateral Lean" : "Rounded Shoulders";
+      postureClass = Math.abs(tiltShift) > tiltLimit ? "Lateral Lean" : "Rounded Shoulders";
       cue =
         postureClass === "Lateral Lean"
           ? "Level your shoulders"

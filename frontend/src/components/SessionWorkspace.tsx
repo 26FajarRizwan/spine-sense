@@ -14,7 +14,15 @@ import {
   type PostureAnalysis,
   type PostureBaseline,
 } from "@/lib/posture/biomechanics";
-import { DEFAULT_SETTINGS, loadSettings } from "@/lib/settings";
+import {
+  DEFAULT_SETTINGS,
+  SETTINGS_COLUMNS,
+  loadSettings,
+  resolveSettings,
+  saveSettings,
+  settingsFromRow,
+  type UserSettings,
+} from "@/lib/settings";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/useAuth";
 import { useSessionConnection } from "@/components/SessionProvider";
@@ -30,6 +38,7 @@ interface AlertSettings {
   gracePeriodSeconds: number;
   audioAlertsEnabled: boolean;
   alertVolume: number;
+  desktopAlertsEnabled: boolean;
 }
 
 interface PredictionResponse {
@@ -37,11 +46,22 @@ interface PredictionResponse {
   inference_source?: unknown;
 }
 
+function toAlertSettings(settings: UserSettings): AlertSettings {
+  return {
+    slouchAngleThreshold: settings.slouchSensitivityDeg,
+    gracePeriodSeconds: settings.gracePeriodSeconds,
+    audioAlertsEnabled: settings.audioAlertsEnabled,
+    alertVolume: settings.audioVolume,
+    desktopAlertsEnabled: settings.desktopAlertsEnabled,
+  };
+}
+
 const INITIAL_ALERT_SETTINGS: AlertSettings = {
   slouchAngleThreshold: DEFAULT_SETTINGS.slouchSensitivityDeg,
   gracePeriodSeconds: DEFAULT_SETTINGS.gracePeriodSeconds,
   audioAlertsEnabled: DEFAULT_SETTINGS.audioAlertsEnabled,
   alertVolume: DEFAULT_SETTINGS.audioVolume,
+  desktopAlertsEnabled: DEFAULT_SETTINGS.desktopAlertsEnabled,
 };
 
 const POSE_CONNECTIONS: Array<[number, number]> = [
@@ -59,14 +79,19 @@ const STATUS_TONES = {
 } as const;
 
 const BACKGROUND_INTERVAL_MS = 500;
-const NOTIFICATION_COOLDOWN_MS = 15_000;
+const NOTIFICATION_COOLDOWN_MS = 12_000;
 const DEFAULT_TITLE = "SpineSense";
 const ALERT_TITLE = "Posture Alert | SpineSense";
 
-type NotificationAccess = NotificationPermission | "unsupported";
+type NotificationState = NotificationPermission | "unsupported";
 
-function subscribeToNothing(): () => void {
-  return () => undefined;
+function subscribeToPermissionChange(onChange: () => void): () => void {
+  document.addEventListener("visibilitychange", onChange);
+  window.addEventListener("focus", onChange);
+  return () => {
+    document.removeEventListener("visibilitychange", onChange);
+    window.removeEventListener("focus", onChange);
+  };
 }
 
 function subscribeToVisibility(onChange: () => void): () => void {
@@ -82,11 +107,11 @@ function readTabVisible(): boolean {
   return false;
 }
 
-function readUnsupportedAccess(): NotificationAccess {
+function readUnsupportedAccess(): NotificationState {
   return "unsupported";
 }
 
-function readNotificationAccess(): NotificationAccess {
+function readNotificationPermission(): NotificationState {
   return "Notification" in window ? Notification.permission : "unsupported";
 }
 
@@ -179,14 +204,12 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
   const backendAvailableRef = useRef(false);
   const predictionClassRef = useRef("");
   const lastNotificationRef = useRef(Number.NEGATIVE_INFINITY);
-  const desktopAlertsRef = useRef(false);
-  const [, refreshNotificationAccess] = useState(0);
-  const notificationAccess = useSyncExternalStore(
-    subscribeToNothing,
-    readNotificationAccess,
+  const [, refreshNotificationState] = useState(0);
+  const notificationPermission = useSyncExternalStore(
+    subscribeToPermissionChange,
+    readNotificationPermission,
     readUnsupportedAccess,
   );
-  const [desktopAlertsEnabled, setDesktopAlertsEnabled] = useState(true);
   const tabHidden = useSyncExternalStore(
     subscribeToVisibility,
     readTabHidden,
@@ -213,13 +236,9 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
   const [saved, setSaved] = useState(false);
 
   settingsRef.current = alertSettings;
-  const desktopAlertsActive =
-    desktopAlertsEnabled && notificationAccess === "granted";
-
   useEffect(() => {
     predictionClassRef.current = predictionClass;
-    desktopAlertsRef.current = desktopAlertsActive;
-  }, [predictionClass, desktopAlertsActive]);
+  }, [predictionClass]);
 
   const postureAlerting =
     active && tabHidden && (analysis?.status ?? "GOOD") !== "GOOD";
@@ -232,12 +251,12 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
     };
   }, [postureAlerting]);
 
-  const requestNotificationAccess = useCallback(async () => {
+  const requestNotificationPermission = useCallback(async () => {
     if (!("Notification" in window)) return;
     if (Notification.permission === "default") {
       await Notification.requestPermission();
     }
-    refreshNotificationAccess((version) => version + 1);
+    refreshNotificationState((version) => version + 1);
   }, []);
 
   const changeActive = useCallback((next: boolean) => {
@@ -267,18 +286,12 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
 
   useEffect(() => {
     if (!protectedMode) {
-      const saved = loadSettings();
-      const next = {
-        slouchAngleThreshold: saved.slouchSensitivityDeg,
-        gracePeriodSeconds: saved.gracePeriodSeconds,
-        audioAlertsEnabled: saved.audioAlertsEnabled,
-        alertVolume: saved.audioVolume,
-      };
-      setAlertSettings(next);
+      setAlertSettings(toAlertSettings(loadSettings()));
       return;
     }
     if (!user) return;
     const userId = user.id;
+    const profileSettings = user.settings;
 
     let cancelled = false;
     async function loadAlertSettings() {
@@ -291,21 +304,19 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
       try {
         const { data, error: queryError } = await supabase
           .from("user_settings")
-          .select("slouch_sensitivity, grace_period_seconds, audio_alerts_enabled, audio_volume")
+          .select(SETTINGS_COLUMNS)
           .eq("user_id", userId)
           .maybeSingle();
         if (cancelled) return;
         if (queryError) {
           setSettingsError(`Could not load alert settings: ${queryError.message}`);
-          return;
         }
-        if (!data) return;
-        setAlertSettings({
-          slouchAngleThreshold: Number(data.slouch_sensitivity),
-          gracePeriodSeconds: Number(data.grace_period_seconds),
-          audioAlertsEnabled: data.audio_alerts_enabled,
-          alertVolume: Number(data.audio_volume),
-        });
+        const resolved = resolveSettings(
+          queryError ? {} : settingsFromRow(data),
+          profileSettings,
+        );
+        saveSettings(resolved);
+        setAlertSettings(toAlertSettings(resolved));
       } catch (loadError) {
         if (!cancelled) {
           setSettingsError(
@@ -395,24 +406,28 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
         const notifyPosture = (timestamp: number, current: PostureAnalysis) => {
           if (
             !document.hidden ||
-            !desktopAlertsRef.current ||
+            current.status === "GOOD" ||
+            !settingsRef.current.desktopAlertsEnabled ||
+            !("Notification" in window) ||
+            Notification.permission !== "granted" ||
             timestamp - lastNotificationRef.current < NOTIFICATION_COOLDOWN_MS
           ) {
             return;
           }
           lastNotificationRef.current = timestamp;
-          const postureClass = predictionClassRef.current || current.postureClass;
+          const classification = predictionClassRef.current || current.postureClass;
           try {
-            const notification = new Notification("Posture alert", {
-              body: `${postureClass}. Score ${current.score}. ${current.cue}.`,
-              tag: "spinesense-posture",
-            });
+            const notification = new Notification("SpineSense Posture Alert", {
+              body: `${classification} detected (Score ${current.score}). ${current.cue}`,
+              tag: "spinesense-posture-alert",
+              renotify: true,
+            } as NotificationOptions);
             notification.onclick = () => {
               window.focus();
               notification.close();
             };
           } catch {
-            desktopAlertsRef.current = false;
+            return;
           }
         };
 
@@ -489,6 +504,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
                     analysisRef.current = displayAnalysis;
                     scoreTotalRef.current += displayAnalysis.score;
                     scoreSamplesRef.current += 1;
+                    notifyPosture(timestamp, displayAnalysis);
 
                     const settings = settingsRef.current;
                     const belowThreshold =
@@ -498,9 +514,6 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
                       if (slumpStartedRef.current === null) slumpStartedRef.current = timestamp;
                       const graceElapsed =
                         timestamp - slumpStartedRef.current >= settings.gracePeriodSeconds * 1000;
-                      if (graceElapsed && displayAnalysis.status !== "GOOD") {
-                        notifyPosture(timestamp, displayAnalysis);
-                      }
                       if (!alertActiveRef.current && graceElapsed) {
                         alertActiveRef.current = true;
                         setAlertActive(true);
@@ -689,17 +702,20 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
     setPredictionClass("Preparing camera");
     setInferenceSource("Local biomechanics");
     lastNotificationRef.current = Number.NEGATIVE_INFINITY;
-    void requestNotificationAccess();
+    void requestNotificationPermission();
     setActive(true);
   }
 
-  function toggleDesktopAlerts() {
-    if (notificationAccess === "default") {
-      void requestNotificationAccess();
+  async function enableDesktopAlerts() {
+    await requestNotificationPermission();
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      new Notification("SpineSense alerts active", {
+        body: "Desktop posture alerts will appear when you switch tabs.",
+        tag: "spinesense-posture-alert",
+      });
+    } catch {
       return;
-    }
-    if (notificationAccess === "granted") {
-      setDesktopAlertsEnabled((value) => !value);
     }
   }
 
@@ -806,26 +822,6 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
           </button>
           <button
             type="button"
-            onClick={toggleDesktopAlerts}
-            disabled={notificationAccess === "unsupported" || notificationAccess === "denied"}
-            aria-pressed={desktopAlertsActive}
-            className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
-              desktopAlertsActive
-                ? "border-brand bg-brand text-white"
-                : "border-slate-200 bg-white text-slate-700"
-            }`}
-          >
-            <BellRing className="h-4 w-4" aria-hidden="true" />
-            {notificationAccess === "unsupported"
-              ? "Desktop alerts unavailable"
-              : notificationAccess === "denied"
-                ? "Desktop alerts blocked"
-                : notificationAccess === "default"
-                  ? "Enable desktop alerts"
-                  : `Desktop alerts ${desktopAlertsEnabled ? "on" : "off"}`}
-          </button>
-          <button
-            type="button"
             onClick={() => setPrivacyMode((value) => !value)}
             aria-pressed={privacyMode}
             className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold ${
@@ -854,6 +850,40 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {notificationPermission === "granted" ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAlertSettings((settings) => ({
+                      ...settings,
+                      desktopAlertsEnabled: !settings.desktopAlertsEnabled,
+                    }))
+                  }
+                  aria-pressed={alertSettings.desktopAlertsEnabled}
+                  className={`inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-semibold ${
+                    alertSettings.desktopAlertsEnabled
+                      ? "bg-emerald-50 text-[#059669]"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  <BellRing className="h-4 w-4" aria-hidden="true" />
+                  Desktop alerts {alertSettings.desktopAlertsEnabled ? "on" : "off"}
+                </button>
+              ) : notificationPermission === "default" ? (
+                <button
+                  type="button"
+                  onClick={() => void enableDesktopAlerts()}
+                  className="inline-flex h-10 items-center gap-2 rounded-full bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  <BellRing className="h-4 w-4" aria-hidden="true" />
+                  Enable desktop alerts
+                </button>
+              ) : notificationPermission === "denied" ? (
+                <span className="inline-flex h-10 items-center gap-2 rounded-full bg-amber-50 px-4 text-sm font-semibold text-amber-800">
+                  <BellOff className="h-4 w-4" aria-hidden="true" />
+                  Alerts blocked in browser
+                </span>
+              ) : null}
               {active ? (
                 <button
                   type="button"

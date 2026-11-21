@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { signOutUser } from "@/lib/auth";
 import {
+  resolveSettings,
+  saveSettings,
+  settingsFromMetadata,
+  type UserSettings,
+} from "@/lib/settings";
+import {
   getSupabaseBrowserClient,
 } from "@/lib/supabaseClient";
 
@@ -12,6 +18,7 @@ export interface AuthUserInfo {
   email: string | null;
   fullName: string | null;
   initials: string;
+  settings: Partial<UserSettings>;
 }
 
 function toInfo(user: User): AuthUserInfo {
@@ -29,7 +36,12 @@ function toInfo(user: User): AuthUserInfo {
       : source.slice(0, 2)
   ).toUpperCase();
 
-  return { id: user.id, email, fullName, initials };
+  return { id: user.id, email, fullName, initials, settings: settingsFromMetadata(meta) };
+}
+
+function hydrateStoredSettings(user: User): void {
+  const stored = settingsFromMetadata(user.user_metadata);
+  if (Object.keys(stored).length > 0) saveSettings(resolveSettings(stored));
 }
 
 export function useAuth() {
@@ -46,6 +58,7 @@ export function useAuth() {
 
     void supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
+      if (data.session?.user) hydrateStoredSettings(data.session.user);
       setUser(data.session?.user ? toInfo(data.session.user) : null);
       setLoading(false);
     });
@@ -54,6 +67,7 @@ export function useAuth() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
+      if (session?.user) hydrateStoredSettings(session.user);
       setUser(session?.user ? toInfo(session.user) : null);
       setLoading(false);
     });

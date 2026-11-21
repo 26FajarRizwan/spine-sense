@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Download, Lightbulb } from "lucide-react";
+import { DEFAULT_SETTINGS } from "@/lib/settings";
+import { useAuth } from "@/lib/useAuth";
 
 interface InsightSession {
   duration_seconds: number;
@@ -22,7 +24,6 @@ interface Insight {
 }
 
 const HEALTHY_SCORE = 75;
-const DAILY_GOAL_MINUTES = 30;
 
 const DAY_PARTS = [
   { label: "morning", start: 5, end: 12 },
@@ -176,13 +177,15 @@ function downloadCsv(sessions: InsightSession[]) {
 
 export function ErgonomicInsights({ sessions, averageScore }: ErgonomicInsightsProps) {
   const insights = useMemo(() => buildInsights(sessions, averageScore), [sessions, averageScore]);
+  const { user } = useAuth();
+  const goalMinutes = user?.settings.dailyGoalMinutes ?? DEFAULT_SETTINGS.dailyGoalMinutes;
   const [now] = useState(() => Date.now());
   const { streak, todayMinutes } = useMemo(
     () => computeConsistency(sessions, now),
     [sessions, now],
   );
   const hasSessions = sessions.length > 0;
-  const goalPercent = Math.min(100, Math.round((todayMinutes / DAILY_GOAL_MINUTES) * 100));
+  const goalPercent = Math.min(100, Math.round((todayMinutes / goalMinutes) * 100));
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_12px_32px_-24px_rgba(15,23,42,0.35)]">
@@ -231,7 +234,7 @@ export function ErgonomicInsights({ sessions, averageScore }: ErgonomicInsightsP
                 </p>
               </div>
               <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
-                {todayMinutes} of {DAILY_GOAL_MINUTES} minutes
+                {todayMinutes} of {goalMinutes} minutes
               </p>
               <div
                 className="mt-2 h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-200"

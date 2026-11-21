@@ -4,10 +4,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight, Check, LockKeyhole, Save, UserRound } from "lucide-react";
+import {
+  DEFAULT_SETTINGS,
+  loadSettings,
+  resolveSettings,
+  saveSettings,
+  settingsFromMetadata,
+} from "@/lib/settings";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/useAuth";
 
 const DESK_SETUPS = ["Laptop Only", "Laptop with Stand", "External Monitor"] as const;
+const GOAL_MINUTE_OPTIONS = [10, 15, 20, 30, 45, 60, 90, 120];
 type Notice = { tone: "success" | "error"; text: string } | null;
 
 const inputClass =
@@ -18,6 +26,7 @@ export default function ProfilePage() {
   const { user, loading, isAuthenticated } = useAuth();
   const [fullName, setFullName] = useState("");
   const [sittingTarget, setSittingTarget] = useState("8");
+  const [dailyGoal, setDailyGoal] = useState(String(DEFAULT_SETTINGS.dailyGoalMinutes));
   const [deskSetup, setDeskSetup] = useState<(typeof DESK_SETUPS)[number]>("Laptop Only");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,6 +46,10 @@ export default function ProfilePage() {
     if (!supabase) return;
     void supabase.auth.getUser().then(({ data }) => {
       const metadata = data.user?.user_metadata as Record<string, unknown> | undefined;
+      const stored = settingsFromMetadata(metadata);
+      if (stored.dailyGoalMinutes !== undefined) {
+        setDailyGoal(String(resolveSettings(stored).dailyGoalMinutes));
+      }
       if (typeof metadata?.daily_sitting_target === "number") {
         setSittingTarget(String(metadata.daily_sitting_target));
       }
@@ -69,14 +82,17 @@ export default function ProfilePage() {
 
     setSaving("profile");
     try {
+      const goalSettings = resolveSettings({ dailyGoalMinutes: Number(dailyGoal) });
       const { error } = await supabase.auth.updateUser({
         data: {
           full_name: fullName.trim(),
           daily_sitting_target: hours,
           primary_desk_setup: deskSetup,
+          daily_goal_minutes: goalSettings.dailyGoalMinutes,
         },
       });
       if (error) throw error;
+      saveSettings({ ...loadSettings(), dailyGoalMinutes: goalSettings.dailyGoalMinutes });
       setNotice({ tone: "success", text: "Profile details saved successfully" });
     } catch (error) {
       setNotice({
@@ -171,6 +187,16 @@ export default function ProfilePage() {
                 {Array.from({ length: 9 }, (_, index) => String(index + 4)).map((hours) => (
                   <option key={hours} value={hours}>{hours} hours</option>
                 ))}
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-ink">
+              Daily healthy session goal
+              <select className={inputClass} value={dailyGoal} onChange={(event) => setDailyGoal(event.target.value)}>
+                {[...new Set([...GOAL_MINUTE_OPTIONS, Number(dailyGoal)])]
+                  .sort((first, second) => first - second)
+                  .map((minutes) => (
+                    <option key={minutes} value={minutes}>{minutes} minutes</option>
+                  ))}
               </select>
             </label>
             <label className="text-sm font-semibold text-ink">
