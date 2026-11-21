@@ -1,11 +1,18 @@
 import math
+from collections import Counter
 from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
 
-from app.schemas import BaselineMetrics, LandmarkPoint, PosturePredictResponse
+from app.schemas import (
+    BaselineMetrics,
+    BatchAnalyzeResponse,
+    LandmarkPoint,
+    PosturePredictRequest,
+    PosturePredictResponse,
+)
 
 LEFT_EAR = 7
 RIGHT_EAR = 8
@@ -164,6 +171,25 @@ class PostureInferenceEngine:
             spine_upright=int(round(_clamp(spine, 0.0, 100.0))),
             cue=CUES.get(posture_class, CUES[CLASS_OPTIMAL]),
             inference_source=source,
+        )
+
+    def analyze_batch(
+        self, frames: list[PosturePredictRequest]
+    ) -> BatchAnalyzeResponse:
+        results = [
+            self.predict(frame.landmarks, frame.baseline, frame.slouch_threshold)
+            for frame in frames
+        ]
+        scores = [result.score for result in results]
+        distribution = Counter(result.posture_class for result in results)
+        return BatchAnalyzeResponse(
+            total_frames=len(results),
+            average_score=round(sum(scores) / len(scores), 2),
+            min_score=min(scores),
+            max_score=max(scores),
+            dominant_posture=distribution.most_common(1)[0][0],
+            slump_frames=sum(result.status == "SLUMPING" for result in results),
+            class_distribution=dict(distribution),
         )
 
     def _model_class(
