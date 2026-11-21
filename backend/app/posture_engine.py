@@ -27,6 +27,7 @@ CLASS_OPTIMAL = "Optimal Upright"
 CLASS_FORWARD_HEAD = "Forward Head"
 CLASS_ROUNDED = "Rounded Shoulders"
 CLASS_LATERAL = "Lateral Lean"
+CLASS_RECLINED = "Reclined Slouch"
 CLASS_SLOUCH = "Deep Slouch"
 
 CLASS_SCORES = {
@@ -34,6 +35,7 @@ CLASS_SCORES = {
     CLASS_FORWARD_HEAD: 60.0,
     CLASS_ROUNDED: 62.0,
     CLASS_LATERAL: 65.0,
+    CLASS_RECLINED: 58.0,
     CLASS_SLOUCH: 35.0,
 }
 
@@ -42,6 +44,7 @@ CUES = {
     CLASS_FORWARD_HEAD: "Head is drifting forward. Draw your chin back.",
     CLASS_ROUNDED: "Shoulders are rolling in. Open the chest.",
     CLASS_LATERAL: "Leaning to one side. Level your shoulders.",
+    CLASS_RECLINED: "Sit upright away from backrest.",
     CLASS_SLOUCH: "Slump detected. Sit back and lengthen your spine.",
 }
 
@@ -49,6 +52,8 @@ NECK_WEIGHT = 0.40
 SHOULDER_WEIGHT = 0.25
 SPINE_WEIGHT = 0.35
 MODEL_BLEND = 0.40
+MIN_SUBSCORE_MARGIN = 12.0
+PENALTY_AT_THRESHOLD = 66.0
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -61,32 +66,40 @@ def _midpoint(a: LandmarkPoint, b: LandmarkPoint) -> np.ndarray:
     )
 
 
-def extract_features(landmarks: list[LandmarkPoint]) -> dict[str, float]:
+def extract_features(
+    landmarks: list[LandmarkPoint], baseline: BaselineMetrics | None = None
+) -> dict[str, float]:
+    reference = baseline or DEFAULT_BASELINE
     ear = _midpoint(landmarks[LEFT_EAR], landmarks[RIGHT_EAR])
     shoulder = _midpoint(landmarks[LEFT_SHOULDER], landmarks[RIGHT_SHOULDER])
     hip = _midpoint(landmarks[LEFT_HIP], landmarks[RIGHT_HIP])
 
     vertical_rise = shoulder[1] - ear[1]
     forward_drift = math.hypot(ear[0] - shoulder[0], ear[2] - shoulder[2])
-    neck_angle = math.degrees(math.atan2(forward_drift, max(vertical_rise, 1e-6)))
+    head_angle = math.degrees(math.atan2(forward_drift, max(vertical_rise, 1e-6)))
+    direction = 1.0 if ear[2] <= shoulder[2] else -1.0
+    neck_angle = direction * head_angle - reference.neck_angle
 
     left = landmarks[LEFT_SHOULDER]
     right = landmarks[RIGHT_SHOULDER]
-    shoulder_tilt = abs(math.degrees(math.atan2(right.y - left.y, right.x - left.x)))
-    if shoulder_tilt > 90.0:
-        shoulder_tilt = 180.0 - shoulder_tilt
+    tilt = abs(math.degrees(math.atan2(right.y - left.y, right.x - left.x)))
+    if tilt > 90.0:
+        tilt = 180.0 - tilt
+    shoulder_tilt = abs(tilt - reference.shoulder_tilt)
 
     shoulder_width = max(math.hypot(right.x - left.x, right.z - left.z), 1e-6)
     torso_length = math.hypot(hip[1] - shoulder[1], hip[2] - shoulder[2])
-    torso_compression = torso_length / shoulder_width
+    torso_compression = (torso_length / shoulder_width) / max(
+        reference.torso_compression, 1e-6
+    )
 
-    depth_delta = float(shoulder[2] - hip[2])
+    depth_delta = reference.depth_delta - float(shoulder[2] - hip[2])
 
     return {
         "neck_angle": float(neck_angle),
         "shoulder_tilt": float(shoulder_tilt),
         "torso_compression": float(torso_compression),
-        "depth_delta": depth_delta,
+        "depth_delta": float(depth_delta),
     }
 
 
@@ -115,24 +128,29 @@ class PostureInferenceEngine:
         baseline: BaselineMetrics | None,
         slouch_threshold: float,
     ) -> PosturePredictResponse:
-        features = extract_features(landmarks)
-        reference = baseline or DEFAULT_BASELINE
+        features = extract_features(landmarks, baseline)
 
-        neck = self._neck_alignment(features, reference, slouch_threshold)
-        shoulder = self._shoulder_balance(features, reference, slouch_threshold)
-        spine = self._spine_upright(features, reference, slouch_threshold)
+        neck = self._neck_alignment(features, slouch_threshold)
+        shoulder = self._shoulder_balance(features, slouch_threshold)
+        spine = self._spine_upright(features, slouch_threshold)
+        ceiling = min(neck, shoulder, spine) + MIN_SUBSCORE_MARGIN
 
-        rule_score = (
-            NECK_WEIGHT * neck + SHOULDER_WEIGHT * shoulder + SPINE_WEIGHT * spine
+        rule_score = min(
+            NECK_WEIGHT * neck + SHOULDER_WEIGHT * shoulder + SPINE_WEIGHT * spine,
+            ceiling,
         )
-        posture_class, confidence = self._rule_class(rule_score, neck, shoulder, spine)
+        posture_class, confidence = self._rule_class(
+            rule_score, neck, shoulder, spine, features
+        )
         score = rule_score
         source = "biomechanical_rules"
 
         ml_result = self._model_class(features)
         if ml_result is not None:
             posture_class, confidence, expected = ml_result
-            score = (1 - MODEL_BLEND) * rule_score + MODEL_BLEND * expected
+            score = min(
+                (1 - MODEL_BLEND) * rule_score + MODEL_BLEND * expected, ceiling
+            )
             source = "ml_classifier"
 
         final_score = int(round(_clamp(score, 0.0, 100.0)))
@@ -141,9 +159,9 @@ class PostureInferenceEngine:
             status=self._status(final_score),
             posture_class=posture_class,
             confidence=round(confidence, 4),
-            neck_alignment=int(round(neck)),
-            shoulder_balance=int(round(shoulder)),
-            spine_upright=int(round(spine)),
+            neck_alignment=int(round(_clamp(neck, 0.0, 100.0))),
+            shoulder_balance=int(round(_clamp(shoulder, 0.0, 100.0))),
+            spine_upright=int(round(_clamp(spine, 0.0, 100.0))),
             cue=CUES.get(posture_class, CUES[CLASS_OPTIMAL]),
             inference_source=source,
         )
@@ -169,41 +187,45 @@ class PostureInferenceEngine:
         return labels[best], float(probabilities[best]), expected
 
     @staticmethod
-    def _neck_alignment(
-        features: dict[str, float], baseline: BaselineMetrics, threshold: float
-    ) -> float:
-        drift = max(0.0, features["neck_angle"] - baseline.neck_angle)
-        return 100.0 * (1.0 - _clamp(drift / (threshold * 1.5)))
+    def _neck_alignment(features: dict[str, float], threshold: float) -> float:
+        deviation = abs(features["neck_angle"])
+        return max(0.0, 100.0 - deviation * PENALTY_AT_THRESHOLD / threshold)
 
     @staticmethod
-    def _shoulder_balance(
-        features: dict[str, float], baseline: BaselineMetrics, threshold: float
-    ) -> float:
-        skew = abs(features["shoulder_tilt"] - baseline.shoulder_tilt)
-        return 100.0 * (1.0 - _clamp(skew / (threshold * 0.75)))
+    def _shoulder_balance(features: dict[str, float], threshold: float) -> float:
+        deviation = features["shoulder_tilt"]
+        return max(0.0, 100.0 - deviation * PENALTY_AT_THRESHOLD / threshold)
 
     @staticmethod
-    def _spine_upright(
-        features: dict[str, float], baseline: BaselineMetrics, threshold: float
-    ) -> float:
-        reference = max(baseline.torso_compression, 1e-6)
-        squash = max(0.0, (reference - features["torso_compression"]) / reference)
-        lean = abs(features["depth_delta"] - baseline.depth_delta)
-        penalty = 60.0 * _clamp(squash / 0.3) + 40.0 * _clamp(lean / (threshold / 40.0))
+    def _spine_upright(features: dict[str, float], threshold: float) -> float:
+        squash = max(0.0, 1.0 - features["torso_compression"])
+        lean = abs(features["depth_delta"])
+        penalty = 60.0 * _clamp(squash / 0.3) + 40.0 * _clamp(
+            lean / (threshold / 200.0)
+        )
         return 100.0 - penalty
 
     @staticmethod
     def _rule_class(
-        score: float, neck: float, shoulder: float, spine: float
+        score: float,
+        neck: float,
+        shoulder: float,
+        spine: float,
+        features: dict[str, float],
     ) -> tuple[str, float]:
-        if score >= 80.0:
+        if min(neck, shoulder, spine) >= 80.0:
             return CLASS_OPTIMAL, _clamp(score / 100.0, 0.5, 0.99)
 
-        ranked = sorted(
-            [(neck, CLASS_FORWARD_HEAD), (shoulder, CLASS_LATERAL), (spine, "")]
-        )
-        weakest, label = ranked[0]
-        if not label:
+        ranked = sorted([(neck, "neck"), (shoulder, "shoulder"), (spine, "spine")])
+        weakest, source = ranked[0]
+        backward = features["neck_angle"] < 0.0 or features["depth_delta"] < 0.0
+        if source == "neck":
+            label = CLASS_RECLINED if features["neck_angle"] < 0.0 else CLASS_FORWARD_HEAD
+        elif source == "shoulder":
+            label = CLASS_LATERAL
+        elif features["depth_delta"] < 0.0 and backward:
+            label = CLASS_RECLINED
+        else:
             label = CLASS_SLOUCH if score < 60.0 else CLASS_ROUNDED
         margin = (ranked[1][0] - weakest) / 100.0
         return label, _clamp(0.55 + margin, 0.5, 0.95)

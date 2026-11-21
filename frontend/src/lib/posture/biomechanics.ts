@@ -9,6 +9,8 @@ export interface PostureBaseline {
   depthDelta: number;
   earShoulderRatio: number;
   torsoAngle: number;
+  noseToShoulderY: number;
+  noseEarGap: number;
 }
 
 export interface PostureAnalysis {
@@ -22,6 +24,7 @@ export interface PostureAnalysis {
     | "Forward Head"
     | "Rounded Shoulders"
     | "Lateral Lean"
+    | "Reclined Slouch"
     | "Deep Slouch";
   cue: string;
   neckAngle: number;
@@ -40,6 +43,8 @@ interface RawMetrics {
   depthDelta: number;
   earShoulderRatio: number;
   torsoAngle: number;
+  noseToShoulderY: number;
+  noseEarGap: number;
   hipsVisible: boolean;
 }
 
@@ -50,6 +55,8 @@ const DEFAULT_BASELINE: PostureBaseline = {
   depthDelta: 0,
   earShoulderRatio: 0.35,
   torsoAngle: 8,
+  noseToShoulderY: 0.35,
+  noseEarGap: 0,
 };
 
 function midpoint(
@@ -89,15 +96,12 @@ function extractRawMetrics(landmarks: NormalizedLandmark[]): RawMetrics | null {
   const ear = midpoint(leftEar, rightEar);
   const shoulder = midpoint(leftShoulder, rightShoulder);
   const nose = landmarks[0];
-  const headX = visible(nose) ? (ear.x + nose.x) / 2 : ear.x;
   const verticalRise = shoulder.y - ear.y;
   if (verticalRise <= 0.015) return null;
 
   const headAngle =
-    (Math.atan2(
-      Math.hypot(headX - shoulder.x, ear.z - shoulder.z),
-      verticalRise,
-    ) *
+    ((ear.z <= shoulder.z ? 1 : -1) *
+      Math.atan2(Math.hypot(ear.x - shoulder.x, ear.z - shoulder.z), verticalRise) *
       180) /
     Math.PI;
   const shoulderTilt = Math.abs(
@@ -108,10 +112,11 @@ function extractRawMetrics(landmarks: NormalizedLandmark[]): RawMetrics | null {
       180) /
       Math.PI,
   );
-  const earShoulderRatio = verticalRise / Math.max(
-    Math.abs(rightShoulder.x - leftShoulder.x),
-    0.01,
-  );
+  const shoulderWidth = Math.max(Math.abs(rightShoulder.x - leftShoulder.x), 0.01);
+  const earShoulderRatio = verticalRise / shoulderWidth;
+  const noseY = visible(nose) ? nose.y : ear.y;
+  const noseToShoulderY = (shoulder.y - noseY) / shoulderWidth;
+  const noseEarGap = (noseY - ear.y) / shoulderWidth;
 
   let torsoCompression = DEFAULT_BASELINE.torsoCompression;
   let torsoAngle = DEFAULT_BASELINE.torsoAngle;
@@ -123,7 +128,14 @@ function extractRawMetrics(landmarks: NormalizedLandmark[]): RawMetrics | null {
     const torsoRise = hip.y - shoulder.y;
     if (torsoRise > 0.015) {
       torsoCompression =
-        torsoRise / Math.max(Math.abs(rightShoulder.x - leftShoulder.x), 0.01);
+        Math.hypot(torsoRise, hip.z - shoulder.z) /
+        Math.max(
+          Math.hypot(
+            rightShoulder.x - leftShoulder.x,
+            rightShoulder.z - leftShoulder.z,
+          ),
+          0.01,
+        );
       torsoAngle =
         (Math.atan2(Math.abs(hip.x - shoulder.x), torsoRise) * 180) / Math.PI;
     }
@@ -136,6 +148,8 @@ function extractRawMetrics(landmarks: NormalizedLandmark[]): RawMetrics | null {
     depthDelta,
     earShoulderRatio,
     torsoAngle,
+    noseToShoulderY,
+    noseEarGap,
     hipsVisible,
   };
 }
@@ -169,6 +183,8 @@ export function createPostureBaseline(
       hipMetrics.length > 0
         ? average(hipMetrics.map((value) => value.torsoAngle))
         : DEFAULT_BASELINE.torsoAngle,
+    noseToShoulderY: average(metrics.map((value) => value.noseToShoulderY)),
+    noseEarGap: average(metrics.map((value) => value.noseEarGap)),
   };
 }
 
@@ -179,11 +195,13 @@ function clamp(value: number, low = 0, high = 100): number {
 export function analyzePosture(
   landmarks: NormalizedLandmark[],
   baseline?: PostureBaseline | null,
+  slouchThreshold = 20,
 ): PostureAnalysis | null {
   const current = extractRawMetrics(landmarks);
   if (!current) return null;
 
   const reference = baseline ?? DEFAULT_BASELINE;
+  const penaltyPerDegree = 66 / slouchThreshold;
   const forwardHeadDelta = current.neckAngle - reference.neckAngle;
   const tiltDelta = current.shoulderTilt - reference.shoulderTilt;
   const compression =
@@ -200,42 +218,76 @@ export function analyzePosture(
     ? current.torsoAngle - reference.torsoAngle
     : 0;
 
-  const neckAlignment = clamp(
-    100 -
-      Math.max(0, forwardHeadDelta) * 2.8 -
-      Math.max(0, compression) * 35,
+  const noseShift = baseline
+    ? (current.noseToShoulderY - reference.noseToShoulderY) /
+      Math.max(Math.abs(reference.noseToShoulderY), 0.05)
+    : 0;
+  const chinLift = baseline
+    ? (reference.noseEarGap - current.noseEarGap) * 120
+    : 0;
+  const reclineAmount = Math.max(
+    0,
+    depthDelta * 200,
+    chinLift,
+    -forwardHeadDelta,
+    noseShift * 100 - 4,
+    -compression * 100 - 4,
   );
-  const shoulderBalance = clamp(100 - Math.abs(tiltDelta) * 4);
+  const neckDeviation = Math.max(
+    Math.abs(forwardHeadDelta),
+    chinLift,
+    Math.abs(noseShift) * 100 - 4,
+  );
+  const spineDeviation = Math.max(
+    Math.abs(torsoAngleDelta),
+    Math.abs(depthDelta) * 200,
+    reclineAmount,
+  );
+
+  const neckAlignment = clamp(
+    100 - neckDeviation * penaltyPerDegree - Math.abs(compression) * 35,
+  );
+  const shoulderBalance = clamp(100 - Math.abs(tiltDelta) * penaltyPerDegree);
   const spineUpright = clamp(
     100 -
-      Math.max(0, compression) * 100 -
-      Math.max(0, torsoSquash) * 35 -
-      Math.abs(depthDelta) * 120 -
-      Math.abs(torsoAngleDelta) * 2.5,
+      spineDeviation * penaltyPerDegree -
+      Math.abs(compression) * 100 -
+      Math.max(0, torsoSquash) * 35,
   );
-  const score = Math.round(
-    clamp(neckAlignment * 0.4 + shoulderBalance * 0.25 + spineUpright * 0.35),
-  );
+  const minSubScore = Math.min(neckAlignment, shoulderBalance, spineUpright);
+  const weightedScore =
+    neckAlignment * 0.4 + shoulderBalance * 0.25 + spineUpright * 0.35;
+  const score = Math.round(clamp(Math.min(weightedScore, minSubScore + 12)));
   const status: BiomechanicalStatus =
     score >= 80 ? "GOOD" : score >= 60 ? "WARNING" : "SLUMP";
 
+  const tiltLimit = slouchThreshold * 0.5;
   let postureClass: PostureAnalysis["postureClass"] = "Optimal Upright";
   let cue = "Aligned";
-  if (score < 60 || spineUpright < 48) {
+  if (
+    status !== "GOOD" &&
+    reclineAmount >= tiltLimit &&
+    reclineAmount >= Math.abs(forwardHeadDelta)
+  ) {
+    postureClass = "Reclined Slouch";
+    cue = "Sit upright away from backrest";
+  } else if (score < 60 || spineUpright < 48) {
     postureClass = "Deep Slouch";
     cue = "Sit upright and pull shoulders back";
-  } else if (neckAlignment <= shoulderBalance && neckAlignment <= spineUpright) {
-    postureClass = "Forward Head";
-    cue = "Lift chin slightly";
-  } else if (shoulderBalance < 72) {
-    postureClass = Math.abs(tiltDelta) > 10 ? "Lateral Lean" : "Rounded Shoulders";
-    cue =
-      postureClass === "Lateral Lean"
-        ? "Level your shoulders"
-        : "Open your chest slightly";
-  } else if (spineUpright < 76) {
-    postureClass = "Rounded Shoulders";
-    cue = "Sit upright and pull shoulders back";
+  } else if (minSubScore < 80) {
+    if (neckAlignment <= shoulderBalance && neckAlignment <= spineUpright) {
+      postureClass = "Forward Head";
+      cue = "Lift chin slightly";
+    } else if (shoulderBalance <= spineUpright) {
+      postureClass = Math.abs(tiltDelta) > tiltLimit ? "Lateral Lean" : "Rounded Shoulders";
+      cue =
+        postureClass === "Lateral Lean"
+          ? "Level your shoulders"
+          : "Open your chest slightly";
+    } else {
+      postureClass = "Rounded Shoulders";
+      cue = "Sit upright and pull shoulders back";
+    }
   }
 
   return {

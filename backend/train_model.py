@@ -19,10 +19,20 @@ CLASS_LABELS = [
     "Forward Head",
     "Rounded Shoulders",
     "Lateral Lean",
+    "Reclined Slouch",
     "Deep Slouch",
 ]
 SAMPLES_PER_CLASS = 1_000
 RANDOM_STATE = 42
+
+CLASS_PARAMETERS = {
+    "Optimal Upright": ((0.0, 3.0), (2.0, 1.3), (1.00, 0.04), (0.0, 0.015)),
+    "Forward Head": ((19.0, 4.5), (3.0, 1.8), (0.97, 0.05), (0.04, 0.025)),
+    "Rounded Shoulders": ((8.0, 3.5), (4.0, 2.0), (0.84, 0.05), (0.07, 0.025)),
+    "Lateral Lean": ((2.0, 3.0), (14.0, 4.0), (0.98, 0.04), (0.0, 0.02)),
+    "Reclined Slouch": ((-14.0, 4.5), (3.0, 1.8), (0.97, 0.04), (-0.09, 0.025)),
+    "Deep Slouch": ((22.0, 4.5), (5.0, 2.5), (0.68, 0.06), (0.13, 0.03)),
+}
 
 
 def generate_dataset(
@@ -33,66 +43,15 @@ def generate_dataset(
         raise ValueError("samples_per_class must be positive")
 
     rng = np.random.default_rng(random_state)
-    class_parameters = {
-        "Optimal Upright": (8.0, 2.6, 2.4, 0.8, 1.55, 0.035, 0.0, 0.018),
-        "Forward Head": (27.0, 4.5, 5.0, 2.8, 1.46, 0.075, 0.085, 0.032),
-        "Rounded Shoulders": (
-            16.0,
-            3.5,
-            6.0,
-            2.7,
-            1.30,
-            0.060,
-            0.135,
-            0.028,
-        ),
-        "Lateral Lean": (11.0, 3.0, 24.0, 4.5, 1.52, 0.050, 0.015, 0.028),
-        "Deep Slouch": (24.0, 4.0, 7.0, 3.0, 1.04, 0.075, 0.17, 0.035),
-    }
-
     feature_rows = []
     labels = []
     for label in CLASS_LABELS:
-        (
-            neck_mean,
-            neck_scale,
-            tilt_mean,
-            tilt_scale,
-            compression_mean,
-            compression_scale,
-            depth_mean,
-            depth_scale,
-        ) = class_parameters[label]
+        neck, tilt, compression, depth = CLASS_PARAMETERS[label]
         count = samples_per_class
-        severity = rng.normal(0.0, 1.0, count)
-        neck_angle = np.clip(
-            neck_mean
-            + neck_scale * severity
-            + rng.normal(0.0, 1.5, count),
-            0.0,
-            60.0,
-        )
-        shoulder_tilt = np.clip(
-            tilt_mean
-            + tilt_scale * severity
-            + rng.normal(0.0, 1.5, count),
-            0.0,
-            60.0,
-        )
-        torso_compression = np.clip(
-            compression_mean
-            - compression_scale * severity
-            + rng.normal(0.0, 0.035, count),
-            0.65,
-            2.0,
-        )
-        depth_delta = np.clip(
-            depth_mean
-            + depth_scale * severity
-            + rng.normal(0.0, 0.012, count),
-            -0.2,
-            0.45,
-        )
+        neck_angle = np.clip(rng.normal(*neck, count), -45.0, 60.0)
+        shoulder_tilt = np.clip(np.abs(rng.normal(*tilt, count)), 0.0, 45.0)
+        torso_compression = np.clip(rng.normal(*compression, count), 0.45, 1.3)
+        depth_delta = np.clip(rng.normal(*depth, count), -0.3, 0.4)
         feature_rows.append(
             np.column_stack(
                 (neck_angle, shoulder_tilt, torso_compression, depth_delta)

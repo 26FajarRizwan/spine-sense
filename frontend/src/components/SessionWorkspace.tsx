@@ -355,7 +355,11 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
 
                 const currentBaseline = baselineRef.current;
                 if (currentBaseline) {
-                  const nextAnalysis = analyzePosture(landmarks, currentBaseline);
+                  const nextAnalysis = analyzePosture(
+                    landmarks,
+                    currentBaseline,
+                    settingsRef.current.slouchAngleThreshold,
+                  );
                   if (nextAnalysis) {
                     const previous = analysisRef.current;
                     const smoothedScore = previous
