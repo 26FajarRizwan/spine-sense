@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Download, Lightbulb } from "lucide-react";
 
@@ -21,6 +21,9 @@ interface Insight {
   body: string;
 }
 
+const HEALTHY_SCORE = 75;
+const DAILY_GOAL_MINUTES = 30;
+
 const DAY_PARTS = [
   { label: "morning", start: 5, end: 12 },
   { label: "afternoon", start: 12, end: 17 },
@@ -37,6 +40,35 @@ function postureStatus(score: number) {
 function dayPartFor(date: Date) {
   const hour = date.getHours() < 5 ? date.getHours() + 24 : date.getHours();
   return DAY_PARTS.find((part) => hour >= part.start && hour < part.end) ?? DAY_PARTS[3];
+}
+
+function dayKey(date: Date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function computeConsistency(sessions: InsightSession[], now: number) {
+  const healthy = sessions.filter(
+    (session) => Number(session.average_score) >= HEALTHY_SCORE,
+  );
+  const healthyDays = new Set(healthy.map((session) => dayKey(new Date(session.created_at))));
+  const today = new Date(now);
+
+  let offset = healthyDays.has(dayKey(today)) ? 0 : 1;
+  let streak = 0;
+  while (
+    healthyDays.has(
+      dayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset)),
+    )
+  ) {
+    streak += 1;
+    offset += 1;
+  }
+
+  const todaySeconds = healthy
+    .filter((session) => dayKey(new Date(session.created_at)) === dayKey(today))
+    .reduce((total, session) => total + session.duration_seconds, 0);
+
+  return { streak, todayMinutes: Math.floor(todaySeconds / 60) };
 }
 
 function buildInsights(sessions: InsightSession[], averageScore: number): Insight[] {
@@ -144,7 +176,13 @@ function downloadCsv(sessions: InsightSession[]) {
 
 export function ErgonomicInsights({ sessions, averageScore }: ErgonomicInsightsProps) {
   const insights = useMemo(() => buildInsights(sessions, averageScore), [sessions, averageScore]);
+  const [now] = useState(() => Date.now());
+  const { streak, todayMinutes } = useMemo(
+    () => computeConsistency(sessions, now),
+    [sessions, now],
+  );
   const hasSessions = sessions.length > 0;
+  const goalPercent = Math.min(100, Math.round((todayMinutes / DAILY_GOAL_MINUTES) * 100));
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_12px_32px_-24px_rgba(15,23,42,0.35)]">
@@ -172,17 +210,56 @@ export function ErgonomicInsights({ sessions, averageScore }: ErgonomicInsightsP
       </div>
 
       {hasSessions ? (
-        <ul className="grid gap-3 bg-mist p-4 sm:p-5 lg:grid-cols-3">
-          {insights.map((insight) => (
-            <li
-              key={insight.title}
-              className="rounded-xl border border-line border-l-4 border-l-spine bg-white p-4"
-            >
-              <h3 className="text-sm font-semibold text-ink">{insight.title}</h3>
-              <p className="mt-1.5 text-sm leading-6 text-ink-soft">{insight.body}</p>
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="grid gap-3 border-b border-line bg-white p-4 sm:grid-cols-2 sm:p-5">
+            <div className="rounded-xl bg-[#F8FAFC] px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">Current Healthy Streak</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-[#2563EB]">
+                {streak} {streak === 1 ? "day" : "days"}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Days in a row with a saved session scoring {HEALTHY_SCORE} or above
+              </p>
+            </div>
+            <div className="rounded-xl bg-[#F8FAFC] px-4 py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-xs font-medium text-slate-500">
+                  Today Healthy Session Goal
+                </p>
+                <p className="text-xs font-semibold tabular-nums text-[#059669]">
+                  {goalPercent}%
+                </p>
+              </div>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+                {todayMinutes} of {DAILY_GOAL_MINUTES} minutes
+              </p>
+              <div
+                className="mt-2 h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-200"
+                role="progressbar"
+                aria-label="Today healthy session goal"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={goalPercent}
+              >
+                <div
+                  className="h-full rounded-full bg-[#059669] transition-[width] duration-200"
+                  style={{ width: `${goalPercent}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          <ul className="grid gap-3 bg-mist p-4 sm:p-5 lg:grid-cols-3">
+            {insights.map((insight) => (
+              <li
+                key={insight.title}
+                className="rounded-xl border border-line border-l-4 border-l-spine bg-white p-4"
+              >
+                <h3 className="text-sm font-semibold text-ink">{insight.title}</h3>
+                <p className="mt-1.5 text-sm leading-6 text-ink-soft">{insight.body}</p>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : (
         <div className="px-5 py-10 text-center">
           <p className="text-sm font-medium text-ink">No insights yet.</p>
