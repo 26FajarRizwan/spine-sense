@@ -31,3 +31,20 @@ class PosturePredictResponse(BaseModel):
     spine_upright: int
     cue: str
     inference_source: str
+
+
+class ClassMetric(BaseModel):
+    posture_class: str
+    precision: float
+    recall: float
+    f1_score: float
+    support: int
+
+
+class ModelMetricsResponse(BaseModel):
+    model_loaded: bool
+    algorithm: str
+    accuracy: float
+    macro_f1: float
+    classes: list[ClassMetric]
+    confusion_matrix: list[list[int]]
