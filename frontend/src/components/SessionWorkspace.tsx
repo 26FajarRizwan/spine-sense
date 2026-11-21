@@ -18,6 +18,7 @@ import { DEFAULT_SETTINGS, loadSettings } from "@/lib/settings";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/useAuth";
 import { useSessionConnection } from "@/components/SessionProvider";
+import { StretchBreakModal } from "@/components/StretchBreakModal";
 import { playCriticalSlumpAlert } from "@/utils/audioAlert";
 
 interface SessionWorkspaceProps {
@@ -191,6 +192,8 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
     readTabHidden,
     readTabVisible,
   );
+  const [stretchOpen, setStretchOpen] = useState(false);
+  const [stretchPromptDismissedAt, setStretchPromptDismissedAt] = useState(0);
   const [active, setActive] = useState(false);
   const [loadingCamera, setLoadingCamera] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(false);
@@ -678,6 +681,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
     slumpCountRef.current = 0;
     setElapsedSeconds(0);
     setSlumpCount(0);
+    setStretchPromptDismissedAt(0);
     setSaved(false);
     setSaveError(null);
     lastSyncRef.current = 0;
@@ -746,6 +750,12 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
     );
   }
 
+  const showStretchPrompt =
+    active &&
+    !stretchOpen &&
+    slumpCount > 0 &&
+    slumpCount % 3 === 0 &&
+    stretchPromptDismissedAt !== slumpCount;
   const currentStatus = analysis?.status ?? "GOOD";
   const tone = analysis
     ? STATUS_TONES[currentStatus]
@@ -758,6 +768,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
 
   return (
     <div className="container mx-auto max-w-7xl px-5 py-8 sm:px-6 lg:py-10">
+      {stretchOpen ? <StretchBreakModal onClose={() => setStretchOpen(false)} /> : null}
       <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">
@@ -854,6 +865,16 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
               ) : null}
               <button
                 type="button"
+                onClick={() => {
+                  setStretchPromptDismissedAt(slumpCount);
+                  setStretchOpen(true);
+                }}
+                className="inline-flex h-10 items-center rounded-xl border border-[#2563EB] bg-white px-4 text-sm font-semibold text-[#2563EB] hover:bg-blue-50"
+              >
+                Stretch break
+              </button>
+              <button
+                type="button"
                 onClick={active ? () => changeActive(false) : startSession}
                 disabled={loadingCamera}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
@@ -867,6 +888,36 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
               </button>
             </div>
           </div>
+
+          {showStretchPrompt ? (
+            <div
+              role="status"
+              className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-[#059669] sm:px-5"
+            >
+              <span className="font-medium">
+                You have slumped {slumpCount} times. A 30 second stretch break can help you reset.
+              </span>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStretchPromptDismissedAt(slumpCount);
+                    setStretchOpen(true);
+                  }}
+                  className="rounded-lg bg-[#059669] px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                >
+                  Start stretch
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStretchPromptDismissedAt(slumpCount)}
+                  className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#059669]"
+                >
+                  Dismiss
+                </button>
+              </span>
+            </div>
+          ) : null}
 
           <div className={`relative aspect-video min-h-72 overflow-hidden ${privacyMode ? "bg-slate-900" : "bg-slate-100"}`}>
             <video
