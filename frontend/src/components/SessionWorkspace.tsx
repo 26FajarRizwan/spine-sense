@@ -5,8 +5,8 @@ import {
   PoseLandmarker,
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Camera, CameraOff, Eye, EyeOff } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Bell, BellOff, BellRing, Camera, CameraOff, Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   analyzePosture,
@@ -56,6 +56,38 @@ const STATUS_TONES = {
   WARNING: { label: "WARNING", color: "#D97706", background: "bg-amber-50 text-amber-800" },
   SLUMP: { label: "SLUMP", color: "#DC2626", background: "bg-red-50 text-red-800" },
 } as const;
+
+const BACKGROUND_INTERVAL_MS = 500;
+const NOTIFICATION_COOLDOWN_MS = 15_000;
+const DEFAULT_TITLE = "SpineSense";
+const ALERT_TITLE = "Posture Alert | SpineSense";
+
+type NotificationAccess = NotificationPermission | "unsupported";
+
+function subscribeToNothing(): () => void {
+  return () => undefined;
+}
+
+function subscribeToVisibility(onChange: () => void): () => void {
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+function readTabHidden(): boolean {
+  return document.hidden;
+}
+
+function readTabVisible(): boolean {
+  return false;
+}
+
+function readUnsupportedAccess(): NotificationAccess {
+  return "unsupported";
+}
+
+function readNotificationAccess(): NotificationAccess {
+  return "Notification" in window ? Notification.permission : "unsupported";
+}
 
 function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -144,6 +176,21 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
   const lastSyncRef = useRef(0);
   const syncInFlightRef = useRef(false);
   const backendAvailableRef = useRef(false);
+  const predictionClassRef = useRef("");
+  const lastNotificationRef = useRef(Number.NEGATIVE_INFINITY);
+  const desktopAlertsRef = useRef(false);
+  const [, refreshNotificationAccess] = useState(0);
+  const notificationAccess = useSyncExternalStore(
+    subscribeToNothing,
+    readNotificationAccess,
+    readUnsupportedAccess,
+  );
+  const [desktopAlertsEnabled, setDesktopAlertsEnabled] = useState(true);
+  const tabHidden = useSyncExternalStore(
+    subscribeToVisibility,
+    readTabHidden,
+    readTabVisible,
+  );
   const [active, setActive] = useState(false);
   const [loadingCamera, setLoadingCamera] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(false);
@@ -163,6 +210,32 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
   const [saved, setSaved] = useState(false);
 
   settingsRef.current = alertSettings;
+  const desktopAlertsActive =
+    desktopAlertsEnabled && notificationAccess === "granted";
+
+  useEffect(() => {
+    predictionClassRef.current = predictionClass;
+    desktopAlertsRef.current = desktopAlertsActive;
+  }, [predictionClass, desktopAlertsActive]);
+
+  const postureAlerting =
+    active && tabHidden && (analysis?.status ?? "GOOD") !== "GOOD";
+
+  useEffect(() => {
+    if (!postureAlerting) return;
+    document.title = ALERT_TITLE;
+    return () => {
+      document.title = DEFAULT_TITLE;
+    };
+  }, [postureAlerting]);
+
+  const requestNotificationAccess = useCallback(async () => {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+    refreshNotificationAccess((version) => version + 1);
+  }, []);
 
   const changeActive = useCallback((next: boolean) => {
     setActive(next);
@@ -258,6 +331,8 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
     let stream: MediaStream | null = null;
     let landmarker: PoseLandmarker | null = null;
     let frameId = 0;
+    let intervalId = 0;
+    let handleVisibility: (() => void) | null = null;
     let lastDetectionAt = 0;
     let lastUiUpdateAt = 0;
     const predictUrl = `${
@@ -313,6 +388,30 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
         setLoadingCamera(false);
         setConnection("live");
         beginCalibration();
+
+        const notifyPosture = (timestamp: number, current: PostureAnalysis) => {
+          if (
+            !document.hidden ||
+            !desktopAlertsRef.current ||
+            timestamp - lastNotificationRef.current < NOTIFICATION_COOLDOWN_MS
+          ) {
+            return;
+          }
+          lastNotificationRef.current = timestamp;
+          const postureClass = predictionClassRef.current || current.postureClass;
+          try {
+            const notification = new Notification("Posture alert", {
+              body: `${postureClass}. Score ${current.score}. ${current.cue}.`,
+              tag: "spinesense-posture",
+            });
+            notification.onclick = () => {
+              window.focus();
+              notification.close();
+            };
+          } catch {
+            desktopAlertsRef.current = false;
+          }
+        };
 
         const trackFrame = (timestamp: number) => {
           if (cancelled || !landmarker || !video || !canvas) return;
@@ -394,10 +493,12 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
                       nextAnalysis.score < 60;
                     if (belowThreshold) {
                       if (slumpStartedRef.current === null) slumpStartedRef.current = timestamp;
-                      if (
-                        !alertActiveRef.current &&
-                        timestamp - slumpStartedRef.current >= settings.gracePeriodSeconds * 1000
-                      ) {
+                      const graceElapsed =
+                        timestamp - slumpStartedRef.current >= settings.gracePeriodSeconds * 1000;
+                      if (graceElapsed && displayAnalysis.status !== "GOOD") {
+                        notifyPosture(timestamp, displayAnalysis);
+                      }
+                      if (!alertActiveRef.current && graceElapsed) {
                         alertActiveRef.current = true;
                         setAlertActive(true);
                         slumpCountRef.current += 1;
@@ -497,10 +598,31 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
               }
             }
           }
-          frameId = window.requestAnimationFrame(trackFrame);
         };
 
-        frameId = window.requestAnimationFrame(trackFrame);
+        const animationLoop = (timestamp: number) => {
+          trackFrame(timestamp);
+          if (!cancelled && !document.hidden) {
+            frameId = window.requestAnimationFrame(animationLoop);
+          }
+        };
+
+        const startLoop = () => {
+          window.cancelAnimationFrame(frameId);
+          window.clearInterval(intervalId);
+          if (document.hidden) {
+            intervalId = window.setInterval(
+              () => trackFrame(performance.now()),
+              BACKGROUND_INTERVAL_MS,
+            );
+          } else {
+            frameId = window.requestAnimationFrame(animationLoop);
+          }
+        };
+
+        handleVisibility = startLoop;
+        document.addEventListener("visibilitychange", startLoop);
+        startLoop();
       } catch (cameraError) {
         if (cancelled) return;
         setLoadingCamera(false);
@@ -518,6 +640,10 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frameId);
+      window.clearInterval(intervalId);
+      if (handleVisibility) {
+        document.removeEventListener("visibilitychange", handleVisibility);
+      }
       landmarker?.close();
       stream?.getTracks().forEach((track) => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
@@ -558,7 +684,19 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
     backendAvailableRef.current = false;
     setPredictionClass("Preparing camera");
     setInferenceSource("Local biomechanics");
+    lastNotificationRef.current = Number.NEGATIVE_INFINITY;
+    void requestNotificationAccess();
     setActive(true);
+  }
+
+  function toggleDesktopAlerts() {
+    if (notificationAccess === "default") {
+      void requestNotificationAccess();
+      return;
+    }
+    if (notificationAccess === "granted") {
+      setDesktopAlertsEnabled((value) => !value);
+    }
   }
 
   async function endAndSave() {
@@ -654,6 +792,26 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
               <BellOff className="h-4 w-4" aria-hidden="true" />
             )}
             Audio {alertSettings.audioAlertsEnabled ? "on" : "off"}
+          </button>
+          <button
+            type="button"
+            onClick={toggleDesktopAlerts}
+            disabled={notificationAccess === "unsupported" || notificationAccess === "denied"}
+            aria-pressed={desktopAlertsActive}
+            className={`inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
+              desktopAlertsActive
+                ? "border-brand bg-brand text-white"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            <BellRing className="h-4 w-4" aria-hidden="true" />
+            {notificationAccess === "unsupported"
+              ? "Desktop alerts unavailable"
+              : notificationAccess === "denied"
+                ? "Desktop alerts blocked"
+                : notificationAccess === "default"
+                  ? "Enable desktop alerts"
+                  : `Desktop alerts ${desktopAlertsEnabled ? "on" : "off"}`}
           </button>
           <button
             type="button"
