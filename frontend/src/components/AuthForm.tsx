@@ -279,7 +279,7 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
           if (/invalid login credentials/i.test(error.message)) {
             setNotice({
               tone: "error",
-              text: "Invalid email or password. Use the eye icon to verify your password.",
+              text: "Invalid email or password. If you registered with Google, click Continue with Google above.",
             });
             return;
           }
