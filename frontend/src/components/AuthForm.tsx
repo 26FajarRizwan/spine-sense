@@ -7,9 +7,10 @@ import {
   Activity,
   AudioLines,
   ChartLine,
+  MailCheck,
   ShieldCheck,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { DEFAULT_USER_SETTINGS } from "@/lib/auth";
 import {
   getSupabaseBrowserClient,
@@ -23,6 +24,7 @@ interface AuthFormProps {
 type AuthMode = "signIn" | "signUp";
 type Notice = { tone: "error" | "success"; text: string } | null;
 
+const RESEND_COOLDOWN_SECONDS = 60;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const inputClass =
   "mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-[#0F172A] outline-none transition focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10";
@@ -180,9 +182,22 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   const [notice, setNotice] = useState<Notice>(() => {
     const message =
       searchParams.get("error") ?? searchParams.get("error_description");
-    return message ? { tone: "error", text: message } : null;
+    if (message) return { tone: "error", text: message };
+    if (searchParams.get("verified") === "true") {
+      return { tone: "success", text: "Email verified successfully. You may now sign in." };
+    }
+    return null;
   });
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
 
   const isSignup = mode === "signUp";
   const configured = isSupabaseConfigured();
@@ -190,6 +205,7 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
     setNotice(null);
+    setNeedsConfirmation(false);
     setPassword("");
     setConfirmPassword("");
   }
@@ -197,6 +213,7 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
   async function submitEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice(null);
+    setNeedsConfirmation(false);
 
     const emailError = validateEmail(email);
     const passwordError = validatePassword(password);
@@ -227,7 +244,10 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
         const { data, error } = await supabase.auth.signUp({
           email: normalizedEmail,
           password,
-          options: { data: { full_name: fullName.trim(), display_name: fullName.trim() } },
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+            data: { full_name: fullName.trim(), display_name: fullName.trim() },
+          },
         });
         if (error) throw error;
         if (data.session && data.user) {
@@ -240,17 +260,26 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
           router.refresh();
           return;
         }
-        setNotice({ tone: "success", text: "Account created. Please verify your email inbox before signing in." });
+        setVerifyEmail(normalizedEmail);
+        setCooldown(RESEND_COOLDOWN_SECONDS);
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email: normalizedEmail,
           password,
         });
         if (error) {
-          if (/invalid login credentials|email not confirmed/i.test(error.message)) {
+          if (/email not confirmed/i.test(error.message)) {
+            setNeedsConfirmation(true);
             setNotice({
               tone: "error",
-              text: "Invalid email or password. Use the eye icon to verify your password or confirm your email first.",
+              text: "Your email is not confirmed yet. Check your inbox for the verification link or request a new one.",
+            });
+            return;
+          }
+          if (/invalid login credentials/i.test(error.message)) {
+            setNotice({
+              tone: "error",
+              text: "Invalid email or password. Use the eye icon to verify your password.",
             });
             return;
           }
@@ -262,6 +291,29 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
       }
     } catch (error) {
       setNotice({ tone: "error", text: messageFrom(error, "Authentication failed") });
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function resendVerification(target: string) {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !configured) {
+      setNotice({ tone: "error", text: "Authentication is not configured" });
+      return;
+    }
+    setLoadingAction("resend");
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: target,
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (error) throw error;
+      setCooldown(RESEND_COOLDOWN_SECONDS);
+      setNotice({ tone: "success", text: "Verification email sent. Check your inbox." });
+    } catch (error) {
+      setNotice({ tone: "error", text: messageFrom(error, "Could not resend the verification email") });
     } finally {
       setLoadingAction(null);
     }
@@ -357,12 +409,46 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
                   <span className="text-[#2563EB]">Sense</span>
                 </span>
               </Link>
-              <h2 className="mt-8 text-2xl font-bold">{isSignup ? "Create your account" : "Welcome back"}</h2>
+              <h2 className="mt-8 text-2xl font-bold">{verifyEmail ? "Check your inbox" : isSignup ? "Create your account" : "Welcome back"}</h2>
               <p className="mt-2 text-sm text-slate-500">
-                {isSignup ? "Start building healthier posture habits" : "Sign in to continue to SpineSense"}
-              </p>
+                {verifyEmail ? "One last step to activate your account" : isSignup ? "Start building healthier posture habits" : "Sign in to continue to SpineSense"}</p>
             </div>
 
+            {verifyEmail ? (
+              <div className="mt-8 space-y-5">
+                <div className="rounded-2xl border border-slate-200 bg-[#F8FAFC] p-5 text-center">
+                  <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#ECFDF5] text-[#059669]">
+                    <MailCheck className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+                  </span>
+                  <p className="mt-4 text-sm text-slate-500">We sent a verification link to</p>
+                  <p className="mt-1 break-all text-sm font-semibold text-[#0F172A]">{verifyEmail}</p>
+                  <p className="mt-3 text-sm text-slate-500">
+                    Open the email and click the link to verify your account. You will be taken to your dashboard automatically.
+                  </p>
+                </div>
+                <NoticeMessage notice={notice} />
+                <button
+                  type="button"
+                  onClick={() => void resendVerification(verifyEmail)}
+                  disabled={busy || cooldown > 0}
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#2563EB] text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+                >
+                  {loadingAction === "resend" ? <><Spinner /> Sending</> : cooldown > 0 ? `Resend available in ${cooldown}s` : "Resend verification email"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVerifyEmail(null);
+                    setNotice(null);
+                    setMode("signIn");
+                  }}
+                  className="w-full text-center text-sm font-semibold text-[#2563EB] hover:underline"
+                >
+                  Back to sign in
+                </button>
+              </div>
+            ) : (
+              <>
             <div className="mt-8 grid gap-3">
               <button type="button" onClick={() => void oauth("google")} disabled={busy} className="inline-flex h-11 items-center justify-center gap-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
                 <GoogleMark />
@@ -409,6 +495,16 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
                 </div>
               ) : null}
               <NoticeMessage notice={notice} />
+              {needsConfirmation ? (
+                <button
+                  type="button"
+                  onClick={() => void resendVerification(email.trim().toLowerCase())}
+                  disabled={busy || cooldown > 0}
+                  className="w-full text-center text-sm font-semibold text-[#2563EB] hover:underline disabled:opacity-60"
+                >
+                  {cooldown > 0 ? `Resend confirmation link in ${cooldown}s` : "Resend confirmation link"}
+                </button>
+              ) : null}
               <button type="submit" disabled={busy} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0F172A] text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
                 {loadingAction === "email" ? <><Spinner /> Please wait</> : isSignup ? "Create account" : "Sign in"}
               </button>
@@ -420,6 +516,8 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
                 {isSignup ? "Sign in" : "Sign up"}
               </button>
             </p>
+              </>
+            )}
             <p className="mt-8 text-center text-xs text-slate-400">
               <Link href="/" className="hover:text-[#2563EB]">Back to home</Link>
             </p>
