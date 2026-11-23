@@ -72,6 +72,63 @@ function NoticeMessage({ notice }: { notice: Notice }) {
   );
 }
 
+interface PasswordInputProps {
+  id?: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+  className: string;
+  required?: boolean;
+}
+
+export function PasswordInput({
+  id,
+  value,
+  onChange,
+  autoComplete,
+  className,
+  required,
+}: PasswordInputProps) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        className={`${className} pr-11`}
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        autoComplete={autoComplete}
+        required={required}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
+        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 transition hover:text-[#2563EB] focus-visible:text-[#2563EB] focus-visible:outline-none"
+      >
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {visible ? (
+            <>
+              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+              <path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+              <path d="m2 2 20 20" />
+            </>
+          ) : (
+            <>
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+              <circle cx="12" cy="12" r="3" />
+            </>
+          )}
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 function GoogleMark() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
@@ -216,6 +273,13 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
             setNotice({
               tone: "error",
               text: "Your email is not confirmed yet. Check your inbox for the verification link or request a new one.",
+            });
+            return;
+          }
+          if (/invalid login credentials/i.test(error.message)) {
+            setNotice({
+              tone: "error",
+              text: "Invalid email or password. Use the eye icon to verify your password.",
             });
             return;
           }
@@ -422,13 +486,13 @@ export function AuthForm({ initialSignupOpen = false }: AuthFormProps) {
                     </button>
                   ) : null}
                 </div>
-                <input id="auth-password" className={inputClass} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={isSignup ? "new-password" : "current-password"} />
+                <PasswordInput id="auth-password" className={inputClass} value={password} onChange={setPassword} autoComplete={isSignup ? "new-password" : "current-password"} />
               </div>
               {isSignup ? (
-                <label className="block text-sm font-semibold">
-                  Confirm password
-                  <input className={inputClass} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
-                </label>
+                <div>
+                  <label htmlFor="auth-confirm-password" className="text-sm font-semibold">Confirm password</label>
+                  <PasswordInput id="auth-confirm-password" className={inputClass} value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" />
+                </div>
               ) : null}
               <NoticeMessage notice={notice} />
               {needsConfirmation ? (
