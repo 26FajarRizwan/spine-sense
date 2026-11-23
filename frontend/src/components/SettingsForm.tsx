@@ -63,8 +63,8 @@ export function SettingsForm() {
 
         if (cancelled) return;
         const loadedSettings = resolveSettings(
-          queryError ? {} : settingsFromRow(data),
           user.settings,
+          queryError ? {} : settingsFromRow(data),
         );
         setSettings(loadedSettings);
         setSavedSettings(loadedSettings);

@@ -60,6 +60,7 @@ export async function signUpUser(
     options: {
       data: {
         full_name: trimmedName,
+        display_name: trimmedName,
         ...metadata,
       },
     },
@@ -189,10 +190,57 @@ export async function persistUserMetadata(
   data: Record<string, unknown>,
 ): Promise<void> {
   const supabase = requireClient();
-  const { error } = await supabase.auth.updateUser({ data });
+
+  const { data: userData } = await supabase.auth.getUser();
+  const currentMetadata =
+    (userData.user?.user_metadata as Record<string, unknown> | undefined) ?? {};
+  const currentName =
+    (typeof currentMetadata.full_name === "string" && currentMetadata.full_name.trim()) ||
+    (typeof currentMetadata.display_name === "string" &&
+      currentMetadata.display_name.trim()) ||
+    null;
+  const metadata = {
+    ...currentMetadata,
+    ...data,
+  };
+
+  if (typeof metadata.full_name !== "string" && currentName) {
+    metadata.full_name = currentName;
+  }
+  if (typeof metadata.display_name !== "string" && currentName) {
+    metadata.display_name = currentName;
+  }
+
+  const { data: updated, error } = await supabase.auth.updateUser({
+    data: metadata,
+  });
   if (error) throw new Error(error.message);
+  if (!updated.user) throw new Error("Profile update failed: no user returned.");
+
   const { error: refreshError } = await supabase.auth.refreshSession();
   if (refreshError) throw new Error(refreshError.message);
+
+  const updatedMetadata =
+    (updated.user.user_metadata as Record<string, unknown> | undefined) ?? metadata;
+  const updatedName =
+    (typeof updatedMetadata.full_name === "string" &&
+      updatedMetadata.full_name.trim()) ||
+    (typeof updatedMetadata.display_name === "string" &&
+      updatedMetadata.display_name.trim()) ||
+    null;
+
+  if (updatedName) {
+    try {
+      await supabase
+        .from("profiles")
+        .upsert(
+          { id: updated.user.id, full_name: updatedName },
+          { onConflict: "id" },
+        );
+    } catch {
+      return;
+    }
+  }
 }
 
 export async function syncProfileRow(

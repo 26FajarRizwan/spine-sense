@@ -130,12 +130,7 @@ export function useAuth() {
   }, [supabase]);
 
   async function signOut() {
-    try {
-      if (supabase) await signOutUser();
-    } finally {
-      profileNameRef.current = null;
-      setUser(null);
-    }
+    if (supabase) await signOutUser();
   }
 
   return {

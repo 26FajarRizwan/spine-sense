@@ -11,7 +11,7 @@ import {
   saveSettings,
   settingsFromMetadata,
 } from "@/lib/settings";
-import { persistUserMetadata, syncProfileRow } from "@/lib/auth";
+import { persistUserMetadata } from "@/lib/auth";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/useAuth";
 
@@ -92,7 +92,6 @@ export default function ProfilePage() {
         primary_desk_setup: deskSetup,
         daily_goal_minutes: goalSettings.dailyGoalMinutes,
       });
-      if (user) await syncProfileRow(user.id, name);
       saveSettings({ ...loadSettings(), dailyGoalMinutes: goalSettings.dailyGoalMinutes });
       setNotice({ tone: "success", text: "Profile details saved successfully" });
     } catch (error) {
