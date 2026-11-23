@@ -11,6 +11,7 @@ import {
   saveSettings,
   settingsFromMetadata,
 } from "@/lib/settings";
+import { PasswordInput } from "@/components/AuthForm";
 import { persistUserMetadata } from "@/lib/auth";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/useAuth";
@@ -220,11 +221,11 @@ export default function ProfilePage() {
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-semibold text-ink">
               New password
-              <input className={inputClass} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" />
+              <PasswordInput className={inputClass} value={newPassword} onChange={setNewPassword} autoComplete="new-password" />
             </label>
             <label className="text-sm font-semibold text-ink">
               Confirm password
-              <input className={inputClass} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
+              <PasswordInput className={inputClass} value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" />
             </label>
           </div>
           <button type="submit" disabled={saving !== null} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl border border-line px-4 text-sm font-semibold text-ink hover:bg-mist disabled:opacity-60">

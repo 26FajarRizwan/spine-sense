@@ -2,7 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { PasswordInput } from "@/components/AuthForm";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
+
+const fieldClass =
+  "h-11 w-full rounded-xl border border-line bg-white px-3.5 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -65,23 +69,21 @@ export default function ResetPasswordPage() {
         <form onSubmit={(event) => void handleSubmit(event)} className="mt-6 space-y-4">
           <label className="block">
             <span className="mb-1.5 block text-sm font-semibold">New password</span>
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="h-11 w-full rounded-xl border border-line bg-white px-3.5 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
+              onChange={setPassword}
+              className={fieldClass}
               required
             />
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-semibold">Confirm password</span>
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              className="h-11 w-full rounded-xl border border-line bg-white px-3.5 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
+              onChange={setConfirmPassword}
+              className={fieldClass}
               required
             />
           </label>
