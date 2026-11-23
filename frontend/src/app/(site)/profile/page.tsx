@@ -30,6 +30,8 @@ export default function ProfilePage() {
   const [sittingTarget, setSittingTarget] = useState("8");
   const [dailyGoal, setDailyGoal] = useState(String(DEFAULT_SETTINGS.dailyGoalMinutes));
   const [deskSetup, setDeskSetup] = useState<(typeof DESK_SETUPS)[number]>("Laptop Only");
+  const [hasEmailPassword, setHasEmailPassword] = useState(true);
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
@@ -47,6 +49,13 @@ export default function ProfilePage() {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
     void supabase.auth.getUser().then(({ data }) => {
+      const authUser = data.user;
+      if (authUser) {
+        setHasEmailPassword(
+          Boolean(authUser.identities?.some((identity) => identity.provider === "email")) ||
+            Boolean(authUser.app_metadata?.providers?.includes("email")),
+        );
+      }
       const metadata = data.user?.user_metadata as Record<string, unknown> | undefined;
       const stored = settingsFromMetadata(metadata);
       if (stored.dailyGoalMinutes !== undefined) {
@@ -108,6 +117,10 @@ export default function ProfilePage() {
   async function updatePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice(null);
+    if (hasEmailPassword && !currentPassword) {
+      setNotice({ tone: "error", text: "Current password is required" });
+      return;
+    }
     if (newPassword.length < 8) {
       setNotice({ tone: "error", text: "Password must be at least 8 characters" });
       return;
@@ -120,6 +133,10 @@ export default function ProfilePage() {
       setNotice({ tone: "error", text: "Passwords do not match" });
       return;
     }
+    if (hasEmailPassword && newPassword === currentPassword) {
+      setNotice({ tone: "error", text: "New password must differ from current password" });
+      return;
+    }
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
       setNotice({ tone: "error", text: "Supabase is not configured" });
@@ -128,8 +145,20 @@ export default function ProfilePage() {
 
     setSaving("password");
     try {
+      if (hasEmailPassword) {
+        const { error: verifyError } = await supabase.auth.signInWithPassword({
+          email: user?.email ?? "",
+          password: currentPassword,
+        });
+        if (verifyError) {
+          setNotice({ tone: "error", text: "Current password is incorrect" });
+          return;
+        }
+      }
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
+      setHasEmailPassword(true);
+      setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       setNotice({ tone: "success", text: "Password updated successfully" });
@@ -216,9 +245,15 @@ export default function ProfilePage() {
         <form onSubmit={(event) => void updatePassword(event)} className="mt-5 rounded-2xl border border-line bg-white p-6 shadow-sm">
           <div className="flex items-center gap-2">
             <LockKeyhole className="h-5 w-5 text-brand" aria-hidden="true" />
-            <h2 className="text-base font-semibold text-ink">Update password</h2>
+            <h2 className="text-base font-semibold text-ink">{hasEmailPassword ? "Update password" : "Set account password"}</h2>
           </div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {hasEmailPassword ? (
+              <label className="text-sm font-semibold text-ink sm:col-span-2">
+                Current password
+                <PasswordInput className={inputClass} value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" required />
+              </label>
+            ) : null}
             <label className="text-sm font-semibold text-ink">
               New password
               <PasswordInput className={inputClass} value={newPassword} onChange={setNewPassword} autoComplete="new-password" />
@@ -229,7 +264,7 @@ export default function ProfilePage() {
             </label>
           </div>
           <button type="submit" disabled={saving !== null} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl border border-line px-4 text-sm font-semibold text-ink hover:bg-mist disabled:opacity-60">
-            {saving === "password" ? "Updating" : "Update password"}
+            {saving === "password" ? "Updating" : hasEmailPassword ? "Update password" : "Set password"}
           </button>
         </form>
 
