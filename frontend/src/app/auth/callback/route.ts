@@ -24,7 +24,9 @@ export async function GET(request: NextRequest) {
     return loginRedirect(request, "Authorization code is missing");
   }
 
-  const response = NextResponse.redirect(new URL("/dashboard", request.url));
+  const next = request.nextUrl.searchParams.get("next");
+  const destination = next && /^\/(?![/\\])/.test(next) ? next : "/dashboard";
+  const response = NextResponse.redirect(new URL(destination, request.url));
   const supabase = createSupabaseServerClient(request, response);
   const { data, error } =
     code

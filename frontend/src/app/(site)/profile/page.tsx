@@ -36,6 +36,14 @@ export default function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
+  const [resetCooldown, setResetCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const timer = window.setTimeout(() => setResetCooldown((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resetCooldown]);
 
   useEffect(() => {
     if (!loading && isSupabaseConfigured() && !isAuthenticated) {
@@ -108,6 +116,31 @@ export default function ProfilePage() {
       setNotice({
         tone: "error",
         text: error instanceof Error ? error.message : "Profile details could not be saved",
+      });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function sendResetLink() {
+    setNotice(null);
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !user?.email) {
+      setNotice({ tone: "error", text: "Password reset is not available for this account" });
+      return;
+    }
+    setSaving("reset");
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+      });
+      if (error) throw error;
+      setResetSentTo(user.email);
+      setResetCooldown(60);
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Reset link could not be sent",
       });
     } finally {
       setSaving(null);
@@ -249,10 +282,25 @@ export default function ProfilePage() {
           </div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             {hasEmailPassword ? (
-              <label className="text-sm font-semibold text-ink sm:col-span-2">
-                Current password
-                <PasswordInput className={inputClass} value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" required />
-              </label>
+              <div className="sm:col-span-2">
+                <div className="flex items-center justify-between text-sm font-semibold text-ink">
+                  <label htmlFor="current-password">Current password</label>
+                  <button
+                    type="button"
+                    onClick={() => void sendResetLink()}
+                    disabled={saving !== null || resetCooldown > 0}
+                    className="font-medium text-[#2563EB] hover:underline disabled:opacity-60 disabled:no-underline"
+                  >
+                    {saving === "reset" ? "Sending reset link..." : resetCooldown > 0 ? `Resend in ${resetCooldown}s` : "Forgot password?"}
+                  </button>
+                </div>
+                <PasswordInput id="current-password" className={inputClass} value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" required />
+                {resetSentTo ? (
+                  <p role="status" className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-[#059669]">
+                    A password reset link was sent to {resetSentTo}. Open it to choose a new password.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
             <label className="text-sm font-semibold text-ink">
               New password
