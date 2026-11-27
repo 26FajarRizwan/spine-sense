@@ -78,6 +78,15 @@ const STATUS_TONES = {
   SLUMP: { label: "SLUMP", color: "#DC2626", background: "bg-red-50 text-red-800" },
 } as const;
 
+const WASM_SOURCES = [
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm",
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm",
+];
+const POSE_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+const POSE_DELEGATES = ["GPU", "CPU"] as const;
+const ENGINE_TIMEOUT_MS = 20_000;
+const VIDEO_READY_TIMEOUT_MS = 5_000;
 const BACKGROUND_INTERVAL_MS = 500;
 const NOTIFICATION_COOLDOWN_MS = 12_000;
 const DEFAULT_TITLE = "SpineSense";
@@ -119,6 +128,81 @@ function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remaining = seconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+}
+
+function hasVideoFrame(video: HTMLVideoElement): boolean {
+  return (
+    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+    video.videoWidth > 0 &&
+    video.videoHeight > 0
+  );
+}
+
+function waitForVideoFrame(video: HTMLVideoElement): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (hasVideoFrame(video)) {
+      resolve();
+      return;
+    }
+    const startedAt = performance.now();
+    const poll = window.setInterval(() => {
+      if (hasVideoFrame(video)) {
+        window.clearInterval(poll);
+        resolve();
+      } else if (performance.now() - startedAt >= VIDEO_READY_TIMEOUT_MS) {
+        window.clearInterval(poll);
+        reject(new Error("the camera did not deliver any video frames"));
+      }
+    }, 50);
+  });
+}
+
+function loadPoseLandmarker(
+  wasmSource: string,
+  delegate: (typeof POSE_DELEGATES)[number],
+): Promise<PoseLandmarker> {
+  return new Promise((resolve, reject) => {
+    let expired = false;
+    const timer = window.setTimeout(() => {
+      expired = true;
+      reject(new Error("the posture model took too long to load"));
+    }, ENGINE_TIMEOUT_MS);
+
+    FilesetResolver.forVisionTasks(wasmSource)
+      .then((fileset) =>
+        PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate },
+          runningMode: "VIDEO",
+          numPoses: 1,
+        }),
+      )
+      .then((instance) => {
+        if (expired) {
+          instance.close();
+          return;
+        }
+        window.clearTimeout(timer);
+        resolve(instance);
+      })
+      .catch((loadError: unknown) => {
+        window.clearTimeout(timer);
+        reject(loadError);
+      });
+  });
+}
+
+async function createPoseLandmarker(isCancelled: () => boolean): Promise<PoseLandmarker | null> {
+  for (const wasmSource of WASM_SOURCES) {
+    for (const delegate of POSE_DELEGATES) {
+      if (isCancelled()) return null;
+      try {
+        return await loadPoseLandmarker(wasmSource, delegate);
+      } catch {
+        continue;
+      }
+    }
+  }
+  throw new Error("Posture tracking could not load. Check your connection and press Start Camera to retry.");
 }
 
 function drawPose(
@@ -371,35 +455,29 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
         }
         video.srcObject = stream;
         await video.play();
+        await waitForVideoFrame(video);
+        if (cancelled) return;
 
-        const fileset = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
-        );
-        const modelOptions = {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-          },
-          runningMode: "VIDEO" as const,
-          numPoses: 1,
-        };
+        setLoadingCamera(false);
+        setPredictionClass("Loading posture model");
+
         try {
-          landmarker = await PoseLandmarker.createFromOptions(fileset, {
-            ...modelOptions,
-            baseOptions: { ...modelOptions.baseOptions, delegate: "GPU" },
-          });
-        } catch {
-          landmarker = await PoseLandmarker.createFromOptions(fileset, {
-            ...modelOptions,
-            baseOptions: { ...modelOptions.baseOptions, delegate: "CPU" },
-          });
+          landmarker = await createPoseLandmarker(() => cancelled);
+        } catch (engineError) {
+          if (cancelled) return;
+          setError(
+            engineError instanceof Error ? engineError.message : "Posture tracking could not load.",
+          );
+          setConnection("offline");
+          changeActive(false);
+          return;
         }
-        if (cancelled) {
-          landmarker.close();
+        if (cancelled || !landmarker) {
+          landmarker?.close();
+          landmarker = null;
           return;
         }
 
-        setLoadingCamera(false);
         setConnection("live");
         beginCalibration();
 
@@ -433,7 +511,7 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
 
         const trackFrame = (timestamp: number) => {
           if (cancelled || !landmarker || !video || !canvas) return;
-          if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && timestamp - lastDetectionAt >= 30) {
+          if (hasVideoFrame(video) && timestamp - lastDetectionAt >= 30) {
             lastDetectionAt = timestamp;
             try {
               const result = landmarker.detectForVideo(video, timestamp);
@@ -1012,7 +1090,10 @@ export function SessionWorkspace({ mode = "demo" }: SessionWorkspaceProps) {
             <span className="mb-2 text-sm text-slate-500">out of 100</span>
           </div>
           <p className="mt-3 text-center text-sm font-medium text-slate-700">
-            {analysis?.cue ?? "Calibrate to begin your posture analysis"}
+            {analysis?.cue ??
+              (active && calibrationSeconds > 0
+                ? "Hold an upright posture while your baseline is captured"
+                : "Calibrate to begin your posture analysis")}
           </p>
 
           <div className="mt-7 space-y-4">
